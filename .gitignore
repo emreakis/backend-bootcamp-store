@@ -1,0 +1,42 @@
+# databases (regenerated from db/schema.sql + db/seed.sql on every boot)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+
+# java
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+
+# typescript / node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# c#
+bin/
+obj/
+
+# go
+/monolith/go/store
+/monolith/go/store.exe
+
+# ruby
+.bundle/
+vendor/bundle/
+
+# editors / os
+.idea/
+.vs/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

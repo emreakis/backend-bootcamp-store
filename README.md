@@ -1,0 +1,150 @@
+# The Store — Backend Bootcamp
+
+The running example for the three-session Backend Bootcamp. One small online store,
+built the same way six times, then pulled apart into services.
+
+> **Session 1 — Distributed architectures.** Today you get the *before* picture: the
+> store as a **modular monolith**. One process, one database, one deployment, three
+> modules. Read it, then argue about where you would cut it.
+>
+> **Session 2 — API design.** The cuts become **contracts** — REST for the edge,
+> gRPC for the internal hop.
+>
+> **Session 3 — Building microservices.** The contracts become **three running
+> services**. Then we break them on purpose and fix them properly.
+
+---
+
+## Pick your language
+
+The store is implemented six times. Every implementation exposes **byte-for-byte the
+same HTTP API on the same port with the same seed data**, so you can follow the whole
+bootcamp in the language you actually work in.
+
+| Language   | Framework            | Storage driver          | Where |
+|------------|----------------------|-------------------------|-------|
+| Python     | FastAPI              | stdlib `sqlite3`        | [`monolith/python`](monolith/python) |
+| Java       | Spring Boot          | `sqlite-jdbc`           | [`monolith/java`](monolith/java) |
+| TypeScript | NestJS               | built-in `node:sqlite`  | [`monolith/typescript`](monolith/typescript) |
+| C#         | ASP.NET Core minimal | `Microsoft.Data.Sqlite` | [`monolith/csharp`](monolith/csharp) |
+| Go         | stdlib `net/http`    | `modernc.org/sqlite`    | [`monolith/go`](monolith/go) |
+| Ruby       | Sinatra              | `sqlite3`               | [`monolith/ruby`](monolith/ruby) |
+
+They are deliberately close to line-for-line. Open two of them side by side — that
+similarity is the point, and it is the argument Session 2 is built on: **the design
+transfers, only the syntax changes.**
+
+## Run it
+
+With Docker, nothing else installed:
+
+```bash
+MONOLITH_IMPL=python docker compose up --build     # or java | typescript | csharp | go | ruby
+```
+
+Windows PowerShell:
+
+```powershell
+$env:MONOLITH_IMPL = "python"; docker compose up --build
+```
+
+Then, in another terminal:
+
+```bash
+curl localhost:8080/health
+curl localhost:8080/v1/products
+curl -X POST localhost:8080/v1/orders \
+     -H 'content-type: application/json' \
+     -d '{"items":[{"sku":"GRD-002","qty":1},{"sku":"BNS-005","qty":2}]}'
+```
+
+To run natively instead — `uv run`, `mvn spring-boot:run`, `npm start`, `dotnet run`,
+`go run .`, `bundle exec ruby app.rb` — see the README inside each language folder.
+
+Verify any implementation against the shared contract (66 checks, needs only Python 3.11+
+and no packages):
+
+```bash
+python tools/smoke.py http://localhost:8080
+```
+
+That script is language-neutral on purpose — it speaks HTTP and has no idea which of
+the six it is talking to. It is the seed of the conformance suite we use in Session 3,
+and it is how you check your own implementation if your language is not one of the six.
+
+## What makes it *modular*
+
+Three modules — `catalog`, `orders`, `payments` — inside one deployable:
+
+```
+            ┌──────────────────── one process, one deployment ────────────────────┐
+            │                                                                     │
+  HTTP ───► │   orders ──in-process call──► catalog        (price and stock)      │
+            │      │                                                              │
+            │      └────in-process call──► payments        (charge the card)      │
+            │                                                                     │
+            └───────────────────────── one SQLite database ────────────────────────┘
+```
+
+One rule, and the whole bootcamp depends on it:
+
+> **A module reads and writes only the tables it owns. Everything else goes through
+> another module's public API.**
+
+`db/schema.sql` marks every table with its owner. How much of that rule your tools can
+actually enforce varies, and comparing the six is instructive:
+
+- **Go, Java, C#** enforce the *public API* half at compile time — unexported functions,
+  package-private classes and `private` members are unreachable from another module, so
+  the only way in is the surface each module chose to publish.
+- **TypeScript** enforces it at wiring time: Nest refuses to inject a provider whose
+  module did not `export` it. Delete one line from `catalog.module.ts` and `orders`
+  stops working.
+- **Ruby** enforces almost none of it, which makes it the most honest of the six — the
+  boundary holds only because someone wrote it down and the team kept to it.
+
+No language enforces the *other* half: that the string `products` appears in exactly one
+module. That is discipline, everywhere, and it is why monoliths rot.
+
+## What the monolith gets for free
+
+These are not nostalgia. They are the bill Session 3 pays:
+
+1. **One transaction.** Checkout reserves stock, writes the order and charges the
+   card inside a single ACID transaction. Payment declined? Everything rolls back,
+   including the stock. Order one `ROA-008` (priced above the decline threshold) and
+   watch it happen — the stock is exactly where it was.
+2. **Foreign keys across the whole domain.** `order_lines.sku` really does reference
+   `products.sku`. The database will not let you sell a product that does not exist.
+3. **Calls that cannot fail.** `orders` calling `catalog` is a function call. It has
+   no timeout, no retry, no circuit breaker, and no partial failure, because a module
+   cannot be down while its caller is up.
+
+On Saturday, all three go away. Sessions 2 and 3 are about what you build to replace them.
+
+## Layout
+
+```
+db/                 schema.sql + seed.sql — shared by all six implementations
+monolith/           the six implementations, plus the API contract they all satisfy
+  API.md            the exact contract: endpoints, status codes, error envelope
+contracts/          Session 2 — OpenAPI and protobuf (published after the session)
+services/           Session 3 — the same store as three services
+exercises/          the in-session exercises
+tools/smoke.sh      language-neutral contract check
+```
+
+## Sessions
+
+| # | Title | Exercise |
+|---|-------|----------|
+| 1 | Distributed architectures | [Split this monolith](exercises/session-1-split-the-monolith.md) |
+| 2 | API design | Design the orders API |
+| 3 | Building microservices | Break the system, then fix it |
+
+Session 3 needs Docker. Please install it before Saturday and run the command above
+once, so a slow first `docker pull` does not cost you the exercise.
+
+---
+
+Emre Akış · Backend Bootcamp · [backendguru.io](https://backendguru.io)

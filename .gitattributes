@@ -1,0 +1,7 @@
+# Six languages, three operating systems in the room. Normalise to LF in the repository
+# so a Windows checkout does not hand a Linux container a file full of carriage returns.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary

@@ -1,0 +1,12 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+ruby '>= 3.2'
+
+gem 'puma', '~> 6.5'
+gem 'rackup', '~> 2.2'
+gem 'sinatra', '~> 4.1'
+# The sqlite3 gem ships precompiled native gems for common Linux platforms, so the
+# Docker build does not need a C toolchain.
+gem 'sqlite3', '~> 2.5'

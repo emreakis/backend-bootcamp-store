@@ -1,0 +1,40 @@
+# One compose file, six implementations.
+#
+#     MONOLITH_IMPL=go docker compose up --build
+#
+# The image changes; nothing else does. Same port, same environment variables, same
+# seed data, same responses. That is the point: a container is an interface, and behind
+# it the language is nobody's business.
+#
+# Session 3 replaces this single service with three, and the same trick lets you swap
+# the language of any one of them without the other two noticing.
+
+name: store-monolith
+
+services:
+  store:
+    build:
+      # Context is the repo root so every Dockerfile can reach the shared db/ files.
+      context: .
+      dockerfile: monolith/${MONOLITH_IMPL:-python}/Dockerfile
+    image: bootcamp/store-monolith-${MONOLITH_IMPL:-python}
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_PATH: /tmp/store.db
+      SCHEMA_PATH: /db/schema.sql
+      SEED_PATH: /db/seed.sql
+      # A fresh, identical database on every boot, so a demo never depends on what the
+      # last demo did.
+      RESET_DB: "true"
+      # Charges above this are declined. ROA-008 costs 529900, which is how you make a
+      # payment fail on purpose — and watch the whole checkout roll back.
+      PAYMENT_DECLINE_OVER_CENTS: "500000"
+      PAYMENT_ALWAYS_DECLINE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s

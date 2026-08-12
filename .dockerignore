@@ -1,0 +1,26 @@
+# The build context is the repo root, so that every Dockerfile can reach db/.
+# Without this file each build would also ship every other language's dependencies.
+
+**/node_modules
+**/dist
+**/target
+**/bin
+**/obj
+**/.venv
+**/venv
+**/__pycache__
+**/.bundle
+**/vendor/bundle
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+
+.git
+.github
+slides
+exercises
+tools
+**/README.md
+**/*.pptx
+**/*.pdf
