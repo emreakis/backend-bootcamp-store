@@ -193,8 +193,9 @@ The decks were written before the code was. **Where a slide and this repository 
 the repository is right** — see [`slides/README.md`](slides/README.md) for the specifics
 and for the script that lists them.
 
-Session 3 needs Docker. Please install it before Saturday and run the command above
-once, so a slow first `docker pull` does not cost you the exercise.
+Every session needs Docker, and Session 3 needs it most. Install it before you come and
+run the command above **once**, at home, on a connection you trust — a first `docker
+pull` shared with thirty other people should not cost you an exercise.
 
 ---
 

@@ -24,8 +24,11 @@ uv run --with pypdf python conformance/slides.py
 ```
 
 which is the same idea as `conformance/contract.py`, pointed at the slides instead of at
-a running service. It currently reports thirteen, and it will keep reporting them until
-the decks are re-exported.
+a running service. It currently reports ten, and it will keep reporting them until the
+decks are re-exported.
+
+**All ten are on Sessions 2 and 3.** Session 1's deck and this repository agree on
+everything a machine can check.
 
 ## Why a PDF is in git at all
 
