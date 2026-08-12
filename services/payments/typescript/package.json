@@ -2,7 +2,7 @@
   "name": "store-payments",
   "version": "1.0.0",
   "private": true,
-  "description": "The payments service — Backend Bootcamp, Session 3",
+  "description": "The payments service — Bootcamp, Session 3",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js"

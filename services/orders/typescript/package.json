@@ -2,7 +2,7 @@
   "name": "store-orders",
   "version": "1.0.0",
   "private": true,
-  "description": "The orders service — Backend Bootcamp, Session 3",
+  "description": "The orders service — Bootcamp, Session 3",
   "scripts": {
     "proto": "protoc -I ../../../contracts/proto --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/gen --ts_proto_opt=outputServices=grpc-js,esModuleInterop=true bootcamp/payments/v1/payments.proto",
     "build": "tsc -p tsconfig.json",
