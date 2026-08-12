@@ -1,15 +1,3 @@
-# NOT RUNNING YET. This file is staged here on purpose.
-#
-# GitHub Actions only reads .github/workflows/, so nothing executes it from `ci/`.
-# It lives here because the token currently pushing this repo has `repo` but not
-# `workflow` scope, and GitHub rejects any push that touches .github/workflows/
-# without it. To activate:
-#
-#     git mv ci/contract.yml .github/workflows/contract.yml
-#
-# once the PAT at github.com/settings/tokens has `workflow` ticked.
-#
-# ---------------------------------------------------------------------------
 # Every implementation, every push, against the same 66 checks.
 #
 # This workflow is the claim on the front page made continuous: the six behave

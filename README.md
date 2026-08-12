@@ -1,5 +1,7 @@
 # The Store — Backend Bootcamp
 
+[![contract](https://github.com/emreakis/backend-bootcamp-store/actions/workflows/contract.yml/badge.svg)](https://github.com/emreakis/backend-bootcamp-store/actions/workflows/contract.yml)
+
 The running example for the three-session Backend Bootcamp. One small online store,
 built the same way six times, then pulled apart into services.
 
@@ -71,6 +73,10 @@ python tools/smoke.py http://localhost:8080
 That script is language-neutral on purpose — it speaks HTTP and has no idea which of
 the six it is talking to. It is the seed of the conformance suite we use in Session 3,
 and it is how you check your own implementation if your language is not one of the six.
+
+The badge at the top is that same script, run against all six on every push. "These six
+behave identically" is a claim, and a claim nobody re-checks is a claim that quietly
+stops being true.
 
 ## What makes it *modular*
 
