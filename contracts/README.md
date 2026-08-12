@@ -1,25 +1,70 @@
-# Contracts — Session 2
+# Contracts
 
-Empty on purpose. **You** design these on Saturday.
+The arrows between the boxes. Session 1 argued about where to cut the monolith;
+these files are what a cut actually looks like once it has to be written down.
 
-Session 2 is a design exercise: in pairs, you specify the orders API — resources,
-verbs, status codes, the error envelope, whether create takes an idempotency key, and
-what cancelling an already-shipped order returns. The published contracts land here
-afterwards, so that what you argued about and what shipped can be compared.
+| File | Shape | Pins down |
+|------|-------|-----------|
+| [`catalog.v1.yaml`](catalog.v1.yaml) | OpenAPI 3.1.1 | The REST contract the world reads. Cursor pagination, and why the API is read-only |
+| [`orders.v1.yaml`](orders.v1.yaml) | OpenAPI 3.1.1 | Checkout, cancel, idempotency, and the 503 that Session 3 is built around |
+| [`payments.v1.proto`](payments.v1.proto) | proto3 | The internal contract, where the field **numbers** are the API |
+| [`problem.yaml`](problem.yaml) | OpenAPI fragment | One RFC 9457 error envelope, `$ref`'d by both REST contracts |
 
-By the end of Session 2 this directory holds:
+## Check them
 
-| File | What it pins down |
-|------|-------------------|
-| `catalog.v1.yaml` | OpenAPI 3.1. The REST contract the world sees |
-| `orders.v1.yaml` | OpenAPI 3.1. Checkout, cancel, and the idempotency story |
-| `payments.v1.proto` | protobuf. The internal contract, where field *numbers* are the API |
-| `problem.md` | The one RFC 9457 error envelope everything shares |
+```bash
+npx @redocly/cli lint contracts/catalog.v1.yaml contracts/orders.v1.yaml
+uv run --with grpcio-tools python -m grpc_tools.protoc -I contracts \
+    --python_out=/tmp --grpc_python_out=/tmp contracts/payments.v1.proto
+```
 
-Until then, [`../monolith/API.md`](../monolith/API.md) is the informal version — what
-the six implementations already agree on, written down after the fact. Read it before
-Saturday and notice what it does *not* let you do: you cannot generate a client from
-it, you cannot diff it in review, and nothing stops an implementation drifting from it
-except a test suite someone remembered to run.
+Both pass. That sentence is the point of the whole session: "the contract is valid" is
+a thing a machine can tell you, and "the prose describes the API accurately" is not.
 
-Closing that gap is the entire point of Session 2.
+Read the contracts in a browser instead:
+
+```bash
+npx @redocly/cli preview-docs contracts/orders.v1.yaml
+```
+
+## Read these three things first
+
+**`orders.v1.yaml` → `POST /v1/orders` → the `Idempotency-Key` header.** A `POST` that
+creates something is not safe to retry, and a caller whose network dropped the response
+cannot tell a successful charge from a failed one. Everything Session 3 does with
+retries depends on this header existing first. Add retries to a call without one and
+you have not added resilience — you have added a double-billing bug that only shows up
+under load.
+
+**`orders.v1.yaml` → the `503` response.** Most contracts document only the failures
+the service causes itself. This one documents what happens when something *else* is
+broken, gives it a `Retry-After`, and promises no charge was made. That response is not
+free — it is the deliverable of the Session 3 exercise, and without a deadline the real
+behaviour is not a 503 but a hang.
+
+**`payments.v1.proto` → the comment block above the messages.** Field *numbers* go on
+the wire, not names. Adding a number is safe, renaming is free, and reusing a number
+corrupts data silently. `reserved 5;` is how you retire one forever.
+
+## Why the two REST files are so different from the proto
+
+Both describe an API. Only one of them **is** the API.
+
+`catalog.v1.yaml` and `orders.v1.yaml` are documents that six hand-written
+implementations promise to satisfy. Nothing stops an implementation drifting from them
+except tests somebody remembered to run — which is exactly why `conformance/` exists.
+
+`payments.v1.proto` is compiled. The server's base class and the client's stub are both
+generated from those bytes, so the code cannot disagree with the contract. There is no
+drift to test for, because there is no gap to drift across.
+
+That is the honest case for gRPC on an internal hop, and it is a stronger argument than
+the one about payload size.
+
+## Compare with what you had
+
+[`../monolith/API.md`](../monolith/API.md) describes the same resources in prose. It is
+clear, accurate, and completely inert: you cannot generate a client from it, diff it
+meaningfully in review, or fail a build with it.
+
+The gap between that file and this directory is the entire session.

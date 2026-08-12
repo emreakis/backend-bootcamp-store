@@ -1,0 +1,424 @@
+openapi: 3.1.1
+
+# =============================================================================
+#  ORDERS — the write side, and the only service that talks to the other two.
+# =============================================================================
+#
+#  This is the contract the Session 2 exercise designs. If you did that exercise,
+#  diff your answer against this one. The interesting disagreements are usually:
+#
+#    * Does create take an idempotency key, and is it required?
+#    * What does cancelling an already-cancelled order return?
+#    * What does the store return when *payments* is down — and whose fault is that,
+#      in status-code terms?
+#
+#  There is more than one defensible answer to each. What is not defensible is
+#  leaving them undecided until a client hits them in production.
+# =============================================================================
+
+info:
+  title: Orders API
+  version: 1.0.0
+  summary: Checkout, and the life of an order afterwards.
+  description: |
+    The orchestrator. One `POST /v1/orders` becomes a REST call to catalog for prices
+    and a gRPC call to payments for the charge, and only then an order.
+
+    Two things follow from that, and both are visible in this contract:
+
+    **This endpoint can fail because something else is broken.** That is what `503`
+    is for here, and why it carries `Retry-After`. An API that only documents the
+    failures it causes itself is half designed.
+
+    **This endpoint is not naturally safe to retry.** A `POST` that creates something
+    will create two of them if the caller sends it twice — and a caller whose network
+    dropped the response has no way to know which happened. `Idempotency-Key` is the
+    fix, and it is described on the operation below.
+
+  contact:
+    name: Backend Bootcamp
+    url: https://github.com/emreakis/backend-bootcamp-store
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: http://orders:8080
+    description: Inside the compose network, where `orders` is a service name resolved by DNS.
+  - url: http://localhost:8080
+    description: From your laptop, with the port published.
+
+# No authentication, and that is a statement rather than an omission.
+#
+# An empty `security` array means "this API requires no credentials". Leaving the
+# field out entirely would mean the same thing to a machine and something quite
+# different to a reviewer, who cannot tell an unauthenticated API from one where
+# somebody forgot. Say it out loud.
+#
+# In front of a real store this becomes a bearer token at the edge, and the
+# orders → payments hop becomes mTLS, since a service that can move money should not
+# be callable by anything that can reach its port.
+security: []
+
+tags:
+  - name: orders
+    description: Placing orders and what happens to them afterwards.
+  - name: operations
+    description: Endpoints the platform calls, not the customer.
+
+paths:
+  /v1/orders:
+    post:
+      tags: [orders]
+      operationId: createOrder
+      summary: Place an order.
+      description: |
+        Prices every line against catalog, charges the card through payments, and only
+        then writes a confirmed order. Any step failing means no order exists.
+
+        ### Idempotency
+
+        Send `Idempotency-Key` with a value unique to the *attempt* — a UUID your
+        client generates once and reuses across retries of the same basket.
+
+        * **Same key, seen before** → the original order, unchanged, with the original
+          status code. Nothing is charged twice.
+        * **No key** → every call creates a new order. A retry after a dropped
+          response produces a second order and a second charge, and no part of this
+          system can tell that was not what you wanted.
+
+        The header is optional because making it mandatory breaks `curl` in a
+        classroom. In a payment system you would make it mandatory, and you would be
+        right to.
+
+        Note the asymmetry worth talking about: `orders → payments` *always* carries
+        an idempotency key, because orders retries that call automatically. A caller
+        who omits the key here is choosing to have no such protection for their own
+        retries.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: A client-generated unique value. A UUID is the obvious choice.
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+          example: 7f3d9c22-0f1a-4a8e-9a3e-6a0f5c2b1d44
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+            examples:
+              basket:
+                summary: Two lines
+                value:
+                  items:
+                    - sku: GRD-002
+                      qty: 1
+                    - sku: BNS-005
+                      qty: 2
+      responses:
+        '201':
+          description: The order was placed and the card was charged.
+          headers:
+            Location:
+              description: Where the new order lives.
+              schema:
+                type: string
+                format: uri-reference
+              example: /v1/orders/3f1b9c60-1f8a-4f2e-9c1a-2b7d8e5a4c30
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '402':
+          description: |
+            The card was declined. The customer's problem to solve, not ours and not
+            a retry candidate — which is exactly why it is a 4xx.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://bootcamp.backendguru.io/problems/payment-declined
+                title: Payment declined
+                status: 402
+                detail: "Card declined for 529900 cents (limit 500000)."
+                instance: /v1/orders
+        '404':
+          description: |
+            A sku in the basket does not exist in catalog.
+
+            Read that carefully: catalog answered `404`, and orders turned it into a
+            *designed order rejection*. It did not pass the status through blindly and
+            it did not let the failure become a 500. Translating a dependency's error
+            into your own vocabulary is most of what an orchestrator is for.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://bootcamp.backendguru.io/problems/product-not-found
+                title: Product not found
+                status: 404
+                detail: "No product with sku 'NOPE-000'."
+                instance: /v1/orders
+        '503':
+          $ref: '#/components/responses/DependencyUnavailable'
+
+  /v1/orders/{id}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Fetch an order.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/OrderNotFound'
+
+  /v1/orders/{id}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelOrder
+      summary: Cancel an order.
+      description: |
+        A `POST` to a sub-path rather than a `DELETE` on the order, because cancelling
+        is not deleting: the order still exists, it still has to be reportable, and
+        its money still has to be accounted for. The resource survives; its *state*
+        changes.
+
+        Naming that state transition in the URL is honest. Pretending it is a
+        deletion is not.
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: Cancelled. The body is the order in its new state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          $ref: '#/components/responses/OrderNotFound'
+        '409':
+          description: |
+            The order is not in a state where cancelling means anything — it has
+            already been cancelled.
+
+            **409 is the underused status code**, and this is its case. The request
+            was well formed, so it is not a `400`. The server is perfectly healthy, so
+            it is not a `500`. The caller asked for a transition the resource cannot
+            make, and only `409` says that.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              example:
+                type: https://bootcamp.backendguru.io/problems/order-not-cancellable
+                title: Order not cancellable
+                status: 409
+                detail: "Order '3f1b9c60-1f8a-4f2e-9c1a-2b7d8e5a4c30' is CANCELLED and cannot be cancelled."
+                instance: /v1/orders/3f1b9c60-1f8a-4f2e-9c1a-2b7d8e5a4c30/cancel
+
+  /health:
+    get:
+      tags: [operations]
+      operationId: health
+      summary: Liveness. Deliberately checks nothing downstream.
+      description: |
+        This one matters more here than in catalog, because orders has dependencies
+        and the temptation to check them is real.
+
+        **Do not.** If this endpoint called payments, then a payments outage would
+        make orders report unhealthy, and the platform would start restarting orders
+        pods — removing capacity from a service that was working, in the middle of an
+        incident, because we told it to.
+
+        Orders is not sick when payments is down. It is *degraded*, which is a
+        different thing and belongs in metrics and alerts, not in liveness.
+      responses:
+        '200':
+          description: The process is alive. Says nothing about its dependencies, on purpose.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, implementation]
+                properties:
+                  status:
+                    const: ok
+                  implementation:
+                    type: string
+                    examples: [python, java, typescript, csharp, go, ruby]
+
+components:
+
+  parameters:
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: 3f1b9c60-1f8a-4f2e-9c1a-2b7d8e5a4c30
+
+  schemas:
+    CreateOrderRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          description: At least one line. An empty basket is a client bug, not an order.
+          items:
+            type: object
+            required: [sku, qty]
+            properties:
+              sku:
+                type: string
+                examples: [GRD-002]
+              qty:
+                type: integer
+                minimum: 1
+                examples: [2]
+
+    OrderLine:
+      type: object
+      required: [sku, name, unit_cents, qty]
+      description: |
+        `name` and `unit_cents` are **copied from catalog at purchase time**, not
+        looked up when you read the order.
+
+        This is not caching and it is not denormalisation for speed. It is
+        correctness: an order records what was sold. Re-price the product next week
+        and every historical order must keep its old number, or your revenue reports
+        change retroactively.
+
+        It also happens to be what lets this service answer without calling catalog at
+        all — a dependency you do not have cannot be down.
+      properties:
+        sku:
+          type: string
+        name:
+          type: string
+        unit_cents:
+          type: integer
+          format: int64
+        qty:
+          type: integer
+          format: int64
+
+    Payment:
+      type: object
+      required: [status, auth_code]
+      properties:
+        status:
+          type: string
+          enum: [APPROVED, DECLINED]
+        auth_code:
+          type: [string, 'null']
+          description: The provider's authorisation code. Null when declined.
+          examples: [AUTH-9C2A41B7]
+
+    Order:
+      type: object
+      required: [id, status, total_cents, created_at, lines, payment]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [CONFIRMED, CANCELLED]
+        total_cents:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+          description: RFC 3339, UTC, seconds precision.
+          examples: ['2026-08-15T11:30:00Z']
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderLine'
+        payment:
+          oneOf:
+            - $ref: '#/components/schemas/Payment'
+            - type: 'null'
+
+    Problem:
+      $ref: './problem.yaml#/components/schemas/Problem'
+
+  responses:
+    ValidationFailed:
+      description: The request was malformed. Change it and try again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://bootcamp.backendguru.io/problems/validation-failed
+            title: Validation failed
+            status: 400
+            detail: An order needs at least one item.
+            instance: /v1/orders
+
+    OrderNotFound:
+      description: No order with that id.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://bootcamp.backendguru.io/problems/order-not-found
+            title: Order not found
+            status: 404
+            detail: "No order with id 'does-not-exist'."
+            instance: /v1/orders/does-not-exist
+
+    DependencyUnavailable:
+      description: |
+        A service orders depends on could not be reached in time, so no order was
+        placed and nothing was charged.
+
+        **This response is the entire Session 3 exercise.** Getting a fast, honest
+        `503` out of a payments outage is a thing you build — with a deadline, a
+        bounded retry and a circuit breaker. The default behaviour is to block every
+        checkout thread until the pool drains and the store goes down with its
+        dependency.
+
+        It is a `5xx` because the caller did nothing wrong and should not change the
+        request. `Retry-After` tells them when to come back, so a well-behaved client
+        backs off instead of joining the stampede.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+          example: 5
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://bootcamp.backendguru.io/problems/payments-unavailable
+            title: Payments unavailable
+            status: 503
+            detail: The payment service did not respond within 2000 ms. No charge was made.
+            instance: /v1/orders

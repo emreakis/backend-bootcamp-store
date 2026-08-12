@@ -1,0 +1,21 @@
+# Lint configuration for the contracts.
+#
+#     npx @redocly/cli lint contracts/catalog.v1.yaml contracts/orders.v1.yaml
+#
+# Two rules from the recommended set are switched off below, each with a reason. That
+# is the honest way to disagree with a linter: not an ignore file that accumulates
+# silently, but a short list somebody can argue with in review.
+
+extends:
+  - recommended
+
+rules:
+  # Flags any server whose URL is a placeholder, localhost included. For a published
+  # API that is exactly right. For a teaching repo whose entire premise is
+  # `docker compose up` on your own laptop, localhost IS the server.
+  no-server-example.com: off
+
+  # Requires every operation to document a 4xx. /health genuinely has none: it takes
+  # no input, so there is nothing a caller can get wrong. Inventing a 400 to satisfy
+  # a linter would be worse documentation, not better.
+  operation-4xx-response: off

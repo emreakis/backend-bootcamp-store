@@ -1,0 +1,172 @@
+// =============================================================================
+//  PAYMENTS — the internal contract.
+// =============================================================================
+//
+//  This file IS the API. Not a description of one, not documentation that drifts —
+//  the server's base class and the client's stub are both generated from these
+//  bytes, so the code physically cannot disagree with the contract.
+//
+//  That is the difference from the two OpenAPI files next to this one. Those
+//  describe services that were written by hand and could, in principle, lie. This
+//  one cannot: nothing exists until the .proto does.
+//
+//  Regenerate with:
+//      buf generate                      # if you have buf
+//      protoc --<lang>_out=… payments.v1.proto
+//  Each service directory has the exact command in its README.
+// =============================================================================
+
+syntax = "proto3";
+
+package bootcamp.payments.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// The version lives in the package name, not just the filename. When v2 arrives it
+// becomes `bootcamp.payments.v2` and both can be served by the same process on the
+// same port — the fully-qualified method name differs, so gRPC routes them apart.
+// Compare with REST, where /v1 and /v2 need routing you write yourself.
+
+option go_package   = "github.com/backendguru/store/gen/paymentsv1;paymentsv1";
+option java_package = "io.backendguru.store.payments.v1";
+option java_multiple_files = true;
+option java_outer_classname = "PaymentsProto";
+option csharp_namespace = "Store.Payments.V1";
+option ruby_package = "Bootcamp::Payments::V1";
+
+// -----------------------------------------------------------------------------
+//  The service
+// -----------------------------------------------------------------------------
+
+service Payments {
+
+  // Charge the card. UNARY: one request, one reply.
+  //
+  // The workhorse, and the only method the Session 3 services implement.
+  //
+  // There is no timeout in this file, and that is not an omission. Deadlines are set
+  // by the CALLER, on every gRPC stub, in every language — because only the caller
+  // knows how long its own user is prepared to wait. The orders service sets 2000 ms,
+  // which is a policy decision meaning "the longest a checkout may wait on a charge",
+  // not a guess about how fast this method is.
+  //
+  // A deadline is also not optional in practice. Its default is *forever*, which is
+  // the worst possible value: without one, a payments outage does not fail checkout,
+  // it hangs checkout, and a hung thread pool takes the whole store down with it.
+  rpc Charge(ChargeRequest) returns (ChargeResponse);
+
+  // Follow a payment as it settles. SERVER STREAMING: one request, a stream of
+  // replies, ended by the server.
+  //
+  // DECLARED BUT NOT IMPLEMENTED. The Session 3 services answer this with
+  // UNIMPLEMENTED, on purpose and by agreement.
+  //
+  // It is here because a contract is allowed to run ahead of its implementations —
+  // that is how you let a consuming team start building before you have finished.
+  // What is *not* allowed is letting it run ahead silently: an UNIMPLEMENTED status
+  // is a defined, catchable answer meaning "this exists in the contract and not yet
+  // in this deployment", which is worlds better than a method that hangs, returns an
+  // empty stream, or 404s.
+  //
+  // The four call shapes, for reference — the two below plus client streaming
+  // (`stream` on the request, good for telemetry uploads) and bidirectional (`stream`
+  // on both, for genuinely conversational protocols, and worth resisting until you
+  // need it).
+  rpc WatchStatus(WatchStatusRequest) returns (stream PaymentStatus);
+}
+
+// -----------------------------------------------------------------------------
+//  Messages
+//
+//  THE FIELD NUMBERS ARE THE API.
+//
+//  Names are a convenience for humans; the wire format carries only the numbers. So:
+//
+//    * Adding a field with a NEW number is always safe. Old readers skip what they
+//      do not recognise, new readers get a default for what old writers omit. That
+//      is the additive-evolution story from REST, except the toolchain enforces it
+//      rather than a code reviewer remembering.
+//    * Renaming a field is invisible on the wire. Free.
+//    * RENUMBERING or REUSING a number is catastrophic and silent. A deployed client
+//      writes an int64 into field 3; a redeployed server reads field 3 as a string.
+//      Nothing errors. You get corrupt data and a very long afternoon.
+//
+//  Hence `reserved`: when you delete a field, you retire its number forever.
+// -----------------------------------------------------------------------------
+
+message ChargeRequest {
+  // Which order this charge belongs to. Carried so payments can be reconciled
+  // against orders later without a shared database — the two services own separate
+  // stores, and this string is the only thing joining them.
+  string order_id = 1;
+
+  // Minor units, as an integer. Never a float: `0.1 + 0.2` is not `0.3` in binary
+  // floating point, and money that is almost right is wrong.
+  int64 amount_cents = 2;
+
+  // ISO 4217. Added in v1.0 as field 3 rather than being assumed, because "it is
+  // always EUR" is true right up until the day it is not, and by then the field is
+  // expensive.
+  string currency = 3;
+
+  // The retry-safety key, and the reason orders is allowed to retry this call at all.
+  //
+  // Charging a card is not naturally idempotent — the network dropping a reply looks
+  // exactly like the charge never happening, and a retry without this field bills the
+  // customer twice. With it, a repeat returns the ORIGINAL response and takes no
+  // second payment.
+  //
+  // Look at the ordering of the argument: the retry in Session 3 is only correct
+  // because this field exists. Add retries to a call that does not have one and you
+  // have not added resilience, you have added a bug that only appears under load.
+  string idempotency_key = 4;
+
+  // Field 5 was `card_token`, removed before v1.0 shipped when the stub replaced the
+  // real provider. Its number is retired forever — see the note above about what
+  // reuse costs.
+  reserved 5;
+  reserved "card_token";
+}
+
+message ChargeResponse {
+  string payment_id = 1;
+
+  ChargeStatus status = 2;
+
+  // Set when APPROVED, empty when DECLINED.
+  //
+  // Empty rather than absent: proto3 scalars have no null. A missing string and an
+  // empty string are the same bytes, so `status` is the field to branch on, never the
+  // emptiness of this one. Designing around that is part of choosing protobuf.
+  string auth_code = 3;
+
+  // Set when DECLINED, empty when APPROVED. Human-readable; do not parse it.
+  string decline_reason = 4;
+}
+
+// Enum values are prefixed with the enum name because protobuf enums share the
+// enclosing namespace in C++ and several generated languages — unprefixed `APPROVED`
+// would collide with the next enum that wants it.
+enum ChargeStatus {
+  // Zero value, and it must be the unknown one. Proto3 has no field presence for
+  // enums: a message from an older client that never set `status` arrives as 0. If 0
+  // meant APPROVED, every unset field would read as a successful charge.
+  CHARGE_STATUS_UNSPECIFIED = 0;
+  CHARGE_STATUS_APPROVED = 1;
+  CHARGE_STATUS_DECLINED = 2;
+}
+
+message WatchStatusRequest {
+  string payment_id = 1;
+}
+
+message PaymentStatus {
+  string payment_id = 1;
+  ChargeStatus status = 2;
+  string detail = 3;
+
+  // A well-known type, imported at the top. Using the standard timestamp rather than
+  // a hand-rolled string means every language's generated code hands you its own
+  // native time type, and nobody has to agree on a format string.
+  google.protobuf.Timestamp observed_at = 4;
+}

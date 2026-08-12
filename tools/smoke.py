@@ -13,8 +13,8 @@ It is also how you join in if your language is not one of the six: implement the
 in `monolith/API.md`, point this at it, and if it passes you are in the system.
 
 Session 3 grows this into a conformance suite that runs against the three services.
-The tests marked ATOMICITY are the ones that will start failing, and the exercise is
-to make them pass again without a database transaction to lean on.
+The tests marked ATOMICITY are the ones with no equivalent over there — see the note
+above them for why that absence is the lesson rather than a gap.
 """
 
 from __future__ import annotations
@@ -169,9 +169,20 @@ problem("unknown order", status, payload, headers, 404, "order-not-found")
 # than the decline threshold, so the charge fails AFTER stock has been reserved and
 # the order rows have been written. One ROLLBACK undoes all of it.
 #
-# On Saturday, catalog and payments live in different processes with different
-# databases and there is no ROLLBACK that spans them. This test will fail, and
-# making it pass again — with a saga and a compensating action — is the exercise.
+# Now the part worth arguing about. On Saturday, catalog and orders are separate
+# services with separate databases and no ROLLBACK spans them — so the split system
+# does not attempt this at all. Its catalog is read-only: orders asks for a price and
+# never touches stock.
+#
+# That is not the services cheating. It is the cheapest correct answer to a
+# distributed transaction, and the one most teams should reach for first: move the
+# work out of the request, or do not split there. Buying this guarantee back needs a
+# saga with a compensating action that survives a crash between two calls, plus
+# reservations that expire when nothing arrives to confirm them — a module's worth of
+# machinery for a line of SQL you already had.
+#
+# So this check has no counterpart in services/. Notice the absence, and notice what
+# it cost to avoid.
 roaster_before = stock_of("ROA-008")
 status, payload, headers = request("POST", "/v1/orders", {"items": [{"sku": "ROA-008", "qty": 1}]})
 problem("ATOMICITY declined payment", status, payload, headers, 402, "payment-declined")

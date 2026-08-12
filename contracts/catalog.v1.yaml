@@ -1,0 +1,287 @@
+openapi: 3.1.1
+
+# =============================================================================
+#  CATALOG — the read side of the store.
+# =============================================================================
+#
+#  Written before the service was. That ordering is the whole idea: this file was
+#  reviewed like code, by the team that has to consume it, while changing it still
+#  cost nothing. Six implementations were then written to satisfy it, and none of
+#  them got a vote on what it says.
+#
+#  Compare it with `monolith/API.md`, which describes the same resources in prose.
+#  Prose cannot generate a client, cannot be diffed in review, and cannot fail a
+#  build. This can.
+# =============================================================================
+
+info:
+  title: Catalog API
+  version: 1.0.0
+  summary: Products, prices and stock levels.
+  description: |
+    The service every other part of the store reads from, and the only one a browser
+    talks to directly. That is why it speaks REST: the world already knows how.
+
+    **This API is read-only.** There is no endpoint here that reserves stock, and
+    that absence is deliberate. In the monolith, checkout decremented stock inside
+    the same transaction that wrote the order. Across a network that transaction does
+    not exist, and buying it back needs a saga, a compensating action that survives a
+    crash between two calls, and reservations that expire on their own.
+
+    The cheapest correct answer to a transaction that would span two services is
+    usually to stop needing it — so inventory moved out of the checkout path
+    entirely. Sessions after this one put it back, over a broker, where a customer is
+    not waiting on it.
+
+  contact:
+    name: Backend Bootcamp
+    url: https://github.com/emreakis/backend-bootcamp-store
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: http://catalog:8000
+    description: |
+      Inside the compose network. `catalog` is not a hostname anyone configured — it
+      is the service name from docker-compose.yml, resolved by the platform's DNS.
+      Kubernetes and a service mesh do the same thing later, with no code change.
+  - url: http://localhost:8000
+    description: From your laptop, with the port published.
+
+# No authentication, and that is a statement rather than an omission.
+#
+# An empty `security` array means "this API requires no credentials". Leaving the
+# field out entirely would mean the same thing to a machine and something quite
+# different to a reviewer, who cannot tell an unauthenticated API from one where
+# somebody forgot. Say it out loud.
+#
+# A public product catalogue is a fair thing to leave open. Note that `stock` is
+# exposed too, which is a business decision rather than a technical one — it tells
+# every competitor exactly how much you are holding.
+security: []
+
+tags:
+  - name: products
+    description: The catalogue itself.
+  - name: operations
+    description: Endpoints the platform calls, not the customer.
+
+paths:
+  /v1/products:
+    get:
+      tags: [products]
+      operationId: listProducts
+      summary: One page of products.
+      description: |
+        Paginated with a **cursor**, not an offset.
+
+        An offset drifts. A client on page 2 of `?offset=20` while somebody inserts a
+        product will either see a row twice or miss one entirely, and it will never
+        find out. A cursor is a position in the data rather than a count of rows
+        someone else can change.
+
+        Walk the pages by passing the previous response's `next_cursor` back. When it
+        comes back `null`, you have everything.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of products, ordered by `sku`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPage'
+              examples:
+                firstPage:
+                  summary: More pages remain
+                  value:
+                    items:
+                      - sku: BNS-005
+                        name: Single Origin Beans
+                        price_cents: 1800
+                        stock: 500
+                      - sku: ESP-001
+                        name: Espresso Machine
+                        price_cents: 49900
+                        stock: 12
+                    next_cursor: ESP-001
+                lastPage:
+                  summary: The end of the catalogue
+                  value:
+                    items:
+                      - sku: SCL-004
+                        name: Precision Scale
+                        price_cents: 4900
+                        stock: 60
+                    next_cursor: null
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /v1/products/{sku}:
+    get:
+      tags: [products]
+      operationId: getProduct
+      summary: One product.
+      description: |
+        This is the call `orders` makes during checkout, and the reason its 404 is
+        worth designing rather than defaulting. A missing sku here has to become a
+        *rejected order* with an explanation the customer can act on — never a stack
+        trace, and never a 500 that makes orders look like the broken one.
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          description: The product's stock-keeping unit.
+          schema:
+            type: string
+            pattern: '^[A-Z]{3}-[0-9]{3}$'
+          example: GRD-002
+      responses:
+        '200':
+          description: The product.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          $ref: '#/components/responses/ProductNotFound'
+
+  /health:
+    get:
+      tags: [operations]
+      operationId: health
+      summary: Liveness. Deliberately checks nothing downstream.
+      description: |
+        Note what this endpoint does **not** do: it does not call the database, and it
+        does not call any other service.
+
+        A health check that verifies its dependencies reports "unhealthy" whenever
+        something downstream is unwell — and then the platform, believing it, starts
+        killing pods that were working perfectly. One service's outage becomes
+        everyone's outage, executed by the orchestrator on your behalf.
+
+        Liveness answers "should I be restarted?" Only this process can know that.
+      responses:
+        '200':
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, implementation]
+                properties:
+                  status:
+                    const: ok
+                  implementation:
+                    type: string
+                    description: Which of the six is answering. Useful after a swap.
+                    examples: [python, java, typescript, csharp, go, ruby]
+
+components:
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Page size. A ceiling exists so one client cannot ask for the whole table.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        Opaque. Take it from the previous response's `next_cursor` and pass it back
+        unmodified.
+
+        "Opaque" is a promise in both directions: you agree not to parse it, and in
+        exchange we may change what it is made of without breaking you. Today it
+        happens to be the last `sku` on the page. Depend on that and you are relying
+        on an implementation detail we never promised — which is Hyrum's law, and the
+        reason this paragraph exists.
+      schema:
+        type: string
+      example: FLT-006
+
+  schemas:
+    Product:
+      type: object
+      required: [sku, name, price_cents, stock]
+      properties:
+        sku:
+          type: string
+          description: Stable identifier. Never reused, even after a product is retired.
+          examples: [GRD-002]
+        name:
+          type: string
+          examples: [Burr Grinder]
+        price_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Minor units, as an integer. Never a float — `0.1 + 0.2` is not `0.3` in
+            binary floating point, and money that is almost right is wrong.
+          examples: [18900]
+        stock:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Units on hand, at the moment we answered. Informational only: nothing in
+            this API reserves it, and it may be stale before you finish reading it.
+          examples: [30]
+
+    ProductPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        next_cursor:
+          type: [string, 'null']
+          description: |
+            Pass to `cursor` for the next page; `null` on the last page.
+
+            Present and explicitly null rather than omitted — a client should not have
+            to distinguish "no more pages" from "field missing because of a bug".
+          examples: [FLT-006]
+
+    Problem:
+      $ref: './problem.yaml#/components/schemas/Problem'
+
+  responses:
+    ValidationFailed:
+      description: The request was malformed. Change it and try again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://bootcamp.backendguru.io/problems/validation-failed
+            title: Validation failed
+            status: 400
+            detail: limit must be an integer between 1 and 100.
+            instance: /v1/products
+
+    ProductNotFound:
+      description: No product with that sku.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://bootcamp.backendguru.io/problems/product-not-found
+            title: Product not found
+            status: 404
+            detail: No product with sku 'ZZZ-999'.
+            instance: /v1/products/ZZZ-999

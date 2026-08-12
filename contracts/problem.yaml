@@ -1,0 +1,84 @@
+# =============================================================================
+#  THE ERROR ENVELOPE — RFC 9457 Problem Details for HTTP APIs.
+# =============================================================================
+#
+#  One shape, every failure, every service. A consumer learns it once and handles
+#  everything the store can go wrong with.
+#
+#  This file exists separately, and both catalog.v1.yaml and orders.v1.yaml $ref it,
+#  because the alternative is two copies that agree today and drift by March. If your
+#  tooling cannot follow a cross-file $ref, bundle first:
+#
+#      npx @redocly/cli bundle contracts/orders.v1.yaml -o /tmp/orders.bundled.yaml
+#
+#  Note what is NOT invented here. RFC 9457 is a published standard, half the
+#  ecosystem already speaks it, and Spring and ASP.NET ship types for it. Designing
+#  your own error body means every client writes a parser for you specifically.
+# =============================================================================
+
+components:
+  schemas:
+    Problem:
+      type: object
+      title: Problem Details
+      description: |
+        The body of every non-2xx response, served as `application/problem+json`.
+
+        The status code says what kind of failure it was; this body says which one.
+        A 409 from `/orders/{id}/cancel` and a 409 from a stock conflict are the same
+        code and entirely different problems — `type` is what a client branches on.
+      required: [type, title, status, detail]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: |
+            A URI identifying the problem **kind**. This is the field clients should
+            switch on: it is stable, machine-readable, and unlike `status` it is
+            specific enough to act on.
+
+            Being a URL, it can also be fetched — point it at documentation your
+            on-call engineer can read at 3am.
+          default: about:blank
+          examples:
+            - https://bootcamp.backendguru.io/problems/payment-declined
+        title:
+          type: string
+          description: |
+            A short, human-readable summary of the problem kind. Stable for a given
+            `type`, and safe to show a developer. Not safe to switch on — that is what
+            `type` is for.
+          examples: [Payment declined]
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: |
+            The HTTP status code, repeated in the body.
+
+            Duplicating it looks redundant and is not: a client reading a log line, a
+            message off a queue, or a response some proxy has already unwrapped still
+            has the whole story in one object.
+          examples: [402]
+        detail:
+          type: string
+          description: |
+            What went wrong with **this** request, in a sentence. Specific where
+            `title` is generic.
+
+            Written for a human, so never leak a stack trace, a SQL fragment, or an
+            internal hostname into it — a 500's detail should say nothing more than
+            that the request failed. The interesting part belongs in your logs, with
+            a correlation id.
+          examples: ["Card declined for 529900 cents (limit 500000)."]
+        instance:
+          type: string
+          format: uri-reference
+          description: The path this happened on.
+          examples: [/v1/orders]
+      examples:
+        - type: https://bootcamp.backendguru.io/problems/order-not-cancellable
+          title: Order not cancellable
+          status: 409
+          detail: "Order '3f1b9c60-1f8a-4f2e-9c1a-2b7d8e5a4c30' is CANCELLED and cannot be cancelled."
+          instance: /v1/orders/3f1b9c60-1f8a-4f2e-9c1a-2b7d8e5a4c30/cancel
