@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" width="960" height="720">
+  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .mono { font-family: Consolas, Menlo, monospace; }</style>
+  <defs>
+    <marker id="fk" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/></marker>
+    <marker id="net" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/></marker>
+  </defs>
+  <rect width="960" height="720" fill="#ffffff"/>
+  <text x="60" y="46" font-size="18" font-weight="600" fill="#111827">Database per service - what the split actually costs</text>
+  <text x="60" y="68" font-size="12" fill="#6b7280">Two guarantees are free tonight and impossible on Saturday. db/schema.sql marks both: LOST BY SATURDAY.</text>
+  <rect x="60" y="92" width="840" height="204" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="80" y="118" font-size="12" font-weight="600" fill="#9ca3af">TONIGHT - ONE SQLITE FILE, ONE ACID TRANSACTION</text>
+  <rect x="100" y="136" width="190" height="106" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1.5"/>
+  <rect x="100" y="136" width="190" height="24" rx="6" fill="#dcfce7"/>
+  <rect x="100" y="154" width="190" height="6" fill="#dcfce7"/>
+  <text x="110" y="152" font-size="11.5" font-weight="600" fill="#111827">products - catalog</text>
+  <text x="110" y="176" font-size="10.5" class="mono" fill="#374151">sku  PK</text>
+  <text x="110" y="194" font-size="10.5" class="mono" fill="#374151">name</text>
+  <text x="110" y="212" font-size="10.5" class="mono" fill="#374151">price_cents</text>
+  <text x="110" y="230" font-size="10.5" class="mono" fill="#374151">stock</text>
+  <rect x="400" y="136" width="200" height="88" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+  <rect x="400" y="136" width="200" height="24" rx="6" fill="#dbeafe"/>
+  <rect x="400" y="154" width="200" height="6" fill="#dbeafe"/>
+  <text x="410" y="152" font-size="11.5" font-weight="600" fill="#111827">order_lines - orders</text>
+  <text x="410" y="176" font-size="10.5" class="mono" fill="#374151">order_id  FK</text>
+  <text x="410" y="194" font-size="10.5" class="mono" fill="#374151">sku  FK</text>
+  <text x="410" y="212" font-size="10.5" class="mono" fill="#374151">qty</text>
+  <rect x="690" y="136" width="190" height="88" rx="6" fill="#ffffff" stroke="#c4b5fd" stroke-width="1.5"/>
+  <rect x="690" y="136" width="190" height="24" rx="6" fill="#ede9fe"/>
+  <rect x="690" y="154" width="190" height="6" fill="#ede9fe"/>
+  <text x="700" y="152" font-size="11.5" font-weight="600" fill="#111827">payments - payments</text>
+  <text x="700" y="176" font-size="10.5" class="mono" fill="#374151">id  PK</text>
+  <text x="700" y="194" font-size="10.5" class="mono" fill="#374151">order_id  FK</text>
+  <text x="700" y="212" font-size="10.5" class="mono" fill="#374151">status</text>
+  <text x="346" y="180" font-size="10" class="mono" fill="#166534" text-anchor="middle">REFERENCES</text>
+  <text x="346" y="194" font-size="10" class="mono" fill="#166534" text-anchor="middle">products(sku)</text>
+  <line x1="400" y1="210" x2="292" y2="210" stroke="#16a34a" stroke-width="2" marker-end="url(#fk)"/>
+  <text x="646" y="180" font-size="10" class="mono" fill="#166534" text-anchor="middle">REFERENCES</text>
+  <text x="646" y="194" font-size="10" class="mono" fill="#166534" text-anchor="middle">orders(id)</text>
+  <line x1="690" y1="210" x2="602" y2="210" stroke="#16a34a" stroke-width="2" marker-end="url(#fk)"/>
+  <text x="346" y="268" font-size="10.5" class="mono" fill="#dc2626" text-anchor="middle">&lt;&lt;&lt; LOST BY SATURDAY</text>
+  <text x="646" y="268" font-size="10.5" class="mono" fill="#dc2626" text-anchor="middle">&lt;&lt;&lt; LOST BY SATURDAY</text>
+  <rect x="60" y="322" width="840" height="288" rx="8" fill="#ffffff" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="80" y="348" font-size="12" font-weight="600" fill="#9ca3af">SATURDAY - A DATABASE PER SERVICE, TWO OF THEM, AND ONE SERVICE WITH NONE</text>
+  <rect x="100" y="366" width="200" height="40" rx="8" fill="#dcfce7" stroke="#86efac" stroke-width="1.5"/>
+  <text x="200" y="391" font-size="14" font-weight="600" fill="#111827" text-anchor="middle">Catalog</text>
+  <path d="M 120,442 v 86 a 80.0,12 0 0 0 160,0 v -86" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <ellipse cx="200.0" cy="442" rx="80.0" ry="12" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="200.0" y="474" font-size="11.5" font-weight="600" class="mono" fill="#1e3a8a" text-anchor="middle">catalog-db</text>
+  <text x="200.0" y="491" font-size="10.5" class="mono" fill="#1e3a8a" text-anchor="middle">products</text>
+  <rect x="400" y="366" width="200" height="40" rx="8" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="500" y="391" font-size="14" font-weight="600" fill="#111827" text-anchor="middle">Orders</text>
+  <path d="M 420,442 v 104 a 80.0,12 0 0 0 160,0 v -104" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <ellipse cx="500.0" cy="442" rx="80.0" ry="12" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="500.0" y="474" font-size="11.5" font-weight="600" class="mono" fill="#1e3a8a" text-anchor="middle">orders-db</text>
+  <text x="500.0" y="491" font-size="10.5" class="mono" fill="#1e3a8a" text-anchor="middle">orders</text>
+  <text x="500.0" y="508" font-size="10.5" class="mono" fill="#1e3a8a" text-anchor="middle">order_lines</text>
+  <text x="500.0" y="525" font-size="10.5" class="mono" fill="#1e3a8a" text-anchor="middle">+ name, unit_cents</text>
+  <rect x="690" y="366" width="200" height="40" rx="8" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="790" y="391" font-size="14" font-weight="600" fill="#111827" text-anchor="middle">Payments</text>
+  <rect x="700" y="430" width="180" height="64" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="790" y="456" font-size="11.5" fill="#6b21a8" text-anchor="middle">no database at all</text>
+  <text x="790" y="474" font-size="10.5" fill="#7c3aed" text-anchor="middle">order_id rides in ChargeRequest</text>
+  <text x="350" y="374" font-size="10" class="mono" fill="#dc2626" text-anchor="middle">GET /v1/</text>
+  <text x="350" y="388" font-size="10" class="mono" fill="#dc2626" text-anchor="middle">products/{sku}</text>
+  <line x1="400" y1="398" x2="308" y2="398" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#net)"/>
+  <text x="120" y="576" font-size="10.5" fill="#6b7280">a lookup that can 404 - a designed</text>
+  <text x="120" y="591" font-size="10.5" fill="#6b7280">error the database never needed</text>
+  <text x="420" y="591" font-size="10.5" fill="#6b7280">the only copy there is - an order records what was sold</text>
+  <text x="60" y="646" font-size="13" fill="#111827">"You did not remove a foreign key. You replaced a guarantee with a request."</text>
+  <text x="60" y="666" font-size="11" fill="#6b7280">services/db/orders/01-schema.sql - the comment above the sku column</text>
+  <text x="60" y="698" font-size="11" fill="#9ca3af">Bootcamp - Session 3, slide 7</text>
+</svg>

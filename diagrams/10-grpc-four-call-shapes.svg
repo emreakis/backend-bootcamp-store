@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 660" width="960" height="660">
+  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .mono { font-family: Consolas, Menlo, monospace; }</style>
+  <defs>
+    <marker id="req" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/></marker>
+    <marker id="rep" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/></marker>
+  </defs>
+  <rect width="960" height="660" fill="#ffffff"/>
+  <text x="60" y="48" font-size="18" font-weight="600" fill="#111827">Four call shapes, one keyword</text>
+  <text x="60" y="70" font-size="12" fill="#6b7280">Where the word stream appears decides the shape: on the reply, the request, both, or neither.</text>
+  <rect x="130" y="96" width="375" height="180" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="150" y="126" font-size="15" font-weight="600" fill="#111827">Unary</text>
+  <text x="150" y="180" font-size="11" fill="#6b7280">client</text>
+  <text x="485" y="180" font-size="11" fill="#6b7280" text-anchor="end">server</text>
+  <line x1="225" y1="158" x2="415" y2="158" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="415" y1="176" x2="225" y2="176" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <text x="150" y="238" font-size="11.5" fill="#374151">One request, one reply - the RPC twin of a REST call.</text>
+  <text x="150" y="256" font-size="11" fill="#6b7280">Charge() - the store's workhorse, and its only shape</text>
+  <rect x="515" y="96" width="375" height="180" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="535" y="126" font-size="15" font-weight="600" fill="#111827">Server streaming</text>
+  <text x="535" y="180" font-size="11" fill="#6b7280">client</text>
+  <text x="870" y="180" font-size="11" fill="#6b7280" text-anchor="end">server</text>
+  <line x1="610" y1="158" x2="800" y2="158" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="800" y1="176" x2="610" y2="176" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <line x1="800" y1="188" x2="610" y2="188" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <line x1="800" y1="200" x2="610" y2="200" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <text x="535" y="238" font-size="11.5" fill="#374151">One request, many replies: watch feeds, progress, big results.</text>
+  <text x="535" y="256" font-size="11" fill="#6b7280">WatchStatus() - declared; services answer UNIMPLEMENTED</text>
+  <rect x="130" y="288" width="375" height="180" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="150" y="318" font-size="15" font-weight="600" fill="#111827">Client streaming</text>
+  <text x="150" y="372" font-size="11" fill="#6b7280">client</text>
+  <text x="485" y="372" font-size="11" fill="#6b7280" text-anchor="end">server</text>
+  <line x1="225" y1="350" x2="415" y2="350" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="225" y1="362" x2="415" y2="362" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="225" y1="374" x2="415" y2="374" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="415" y1="392" x2="225" y2="392" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <text x="150" y="430" font-size="11.5" fill="#374151">Many requests, one reply: uploads, metric batches, log shipping.</text>
+  <text x="150" y="448" font-size="11" fill="#6b7280">the shape the store does not need yet</text>
+  <rect x="515" y="288" width="375" height="180" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="535" y="318" font-size="15" font-weight="600" fill="#111827">Bidirectional</text>
+  <text x="535" y="372" font-size="11" fill="#6b7280">client</text>
+  <text x="870" y="372" font-size="11" fill="#6b7280" text-anchor="end">server</text>
+  <line x1="610" y1="350" x2="800" y2="350" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="610" y1="362" x2="800" y2="362" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="610" y1="374" x2="800" y2="374" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+  <line x1="800" y1="392" x2="610" y2="392" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <line x1="800" y1="404" x2="610" y2="404" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <line x1="800" y1="416" x2="610" y2="416" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+  <text x="535" y="430" font-size="11.5" fill="#374151">Both sides stream on one connection: chat, live sync, signaling.</text>
+  <text x="535" y="448" font-size="11" fill="#6b7280">worth resisting until you genuinely need it</text>
+  <rect x="130" y="500" width="760" height="96" rx="6" fill="#111827" stroke="#374151" stroke-width="1"/>
+  <text x="150" y="528" font-size="12.5" class="mono" fill="#6b7280">// contracts/proto/bootcamp/payments/v1/payments.proto</text>
+  <text x="150" y="551" font-size="12.5" class="mono" fill="#e5e7eb">rpc Charge(ChargeRequest) returns (ChargeResponse);</text>
+  <text x="150" y="574" font-size="12.5" class="mono" fill="#e5e7eb">rpc WatchStatus(WatchStatusRequest) returns (<tspan fill="#86efac" font-weight="600">stream</tspan> PaymentStatus);</text>
+  <g transform="translate(130, 630)">
+    <line x1="0" y1="-4" x2="30" y2="-4" stroke="#2563eb" stroke-width="1.5" marker-end="url(#req)"/>
+    <text x="38" y="0" font-size="11" fill="#6b7280">requests</text>
+    <line x1="110" y1="-4" x2="140" y2="-4" stroke="#16a34a" stroke-width="1.5" marker-end="url(#rep)"/>
+    <text x="148" y="0" font-size="11" fill="#6b7280">replies</text>
+  </g>
+  <text x="760" y="634" font-size="11" fill="#9ca3af">Bootcamp - Session 2, slide 16</text>
+</svg>

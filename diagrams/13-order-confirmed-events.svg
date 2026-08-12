@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 680" width="960" height="680">
+  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .mono { font-family: Consolas, Menlo, monospace; }</style>
+  <defs>
+    <marker id="sync" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/></marker>
+    <marker id="pub" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/></marker>
+    <marker id="sub" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/></marker>
+  </defs>
+  <rect width="960" height="680" fill="#ffffff"/>
+  <text x="60" y="46" font-size="18" font-weight="600" fill="#111827">Asynchronous events - who is waiting, and who is not</text>
+  <text x="60" y="68" font-size="12" fill="#6b7280">Not every consequence of an order deserves a synchronous call in the checkout path.</text>
+  <text x="60" y="112" font-size="12" font-weight="600" fill="#9ca3af">SYNCHRONOUS - THE CUSTOMER IS WAITING ON EVERY ONE OF THESE</text>
+  <rect x="60" y="132" width="140" height="40" rx="8" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="130.0" y="157.0" font-size="13.5" font-weight="600" fill="#111827" text-anchor="middle">Client</text>
+  <rect x="320" y="132" width="160" height="40" rx="8" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="400.0" y="157.0" font-size="13.5" font-weight="600" fill="#111827" text-anchor="middle">Orders</text>
+  <rect x="660" y="122" width="200" height="36" rx="8" fill="#dcfce7" stroke="#86efac" stroke-width="1.5"/>
+  <text x="760.0" y="145.0" font-size="13.5" font-weight="600" fill="#111827" text-anchor="middle">Catalog</text>
+  <rect x="660" y="176" width="200" height="36" rx="8" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="760.0" y="199.0" font-size="13.5" font-weight="600" fill="#111827" text-anchor="middle">Payments</text>
+  <line x1="200" y1="152" x2="312" y2="152" stroke="#2563eb" stroke-width="2" marker-end="url(#sync)"/>
+  <text x="256" y="142" font-size="10.5" fill="#2563eb" text-anchor="middle">POST /v1/orders</text>
+  <line x1="480" y1="140" x2="652" y2="140" stroke="#2563eb" stroke-width="1.5" marker-end="url(#sync)"/>
+  <text x="566" y="130" font-size="10.5" fill="#2563eb" text-anchor="middle">price + stock</text>
+  <path d="M 480,164 H 570 V 194 H 652" fill="none" stroke="#2563eb" stroke-width="1.5" marker-end="url(#sync)"/>
+  <text x="566" y="212" font-size="10.5" fill="#2563eb" text-anchor="middle">Charge, 2 s deadline</text>
+  <text x="60" y="286" font-size="12" font-weight="600" fill="#9ca3af">ASYNCHRONOUS - NOBODY IS WAITING</text>
+  <line x1="400" y1="172" x2="400" y2="304" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#pub)"/>
+  <text x="412" y="248" font-size="10.5" fill="#9333ea">published once, after the 201 goes back</text>
+  <rect x="290" y="310" width="220" height="34" rx="17" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1.5"/>
+  <text x="400" y="332" font-size="12.5" class="mono" font-weight="600" fill="#6b21a8" text-anchor="middle">OrderConfirmed</text>
+  <line x1="400" y1="344" x2="400" y2="392" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#pub)"/>
+  <rect x="280" y="398" width="240" height="38" rx="19" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+  <text x="400" y="422" font-size="12.5" font-weight="600" fill="#9a3412" text-anchor="middle">broker</text>
+  <text x="536" y="422" font-size="10.5" fill="#9a3412">the new moving part you operate</text>
+  <path d="M 340,436 V 470 H 195 V 500" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#sub)"/>
+  <line x1="400" y1="436" x2="400" y2="500" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#sub)"/>
+  <path d="M 460,436 V 470 H 605 V 500" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#sub)"/>
+  <rect x="110" y="506" width="170" height="40" rx="8" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="195.0" y="531.0" font-size="13.5" font-weight="600" fill="#111827" text-anchor="middle">email</text>
+  <text x="195.0" y="564" font-size="10.5" fill="#6b7280" text-anchor="middle">sends the receipt</text>
+  <rect x="315" y="506" width="170" height="40" rx="8" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="400.0" y="531.0" font-size="13.5" font-weight="600" fill="#111827" text-anchor="middle">analytics</text>
+  <text x="400.0" y="564" font-size="10.5" fill="#6b7280" text-anchor="middle">updates the dashboard</text>
+  <rect x="520" y="506" width="170" height="40" rx="8" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="605.0" y="531.0" font-size="13.5" font-weight="600" fill="#111827" text-anchor="middle">inventory</text>
+  <text x="605.0" y="564" font-size="10.5" fill="#6b7280" text-anchor="middle">plans the restock</text>
+  <text x="60" y="586" font-size="12" fill="#374151">The order flow neither waits on, nor knows about, its listeners. The price: a broker to run, and consistency that is eventual.</text>
+  <text x="60" y="606" font-size="11" fill="#9ca3af">The Session 3 store draws this line but ships no broker - its checkout stays synchronous. This is the next cut, once there is a queue to own.</text>
+  <g transform="translate(60, 648)">
+    <line x1="0" y1="-4" x2="30" y2="-4" stroke="#2563eb" stroke-width="2" marker-end="url(#sync)"/>
+    <text x="38" y="0" font-size="11" fill="#6b7280">synchronous - the caller waits</text>
+    <line x1="210" y1="-4" x2="240" y2="-4" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#pub)"/>
+    <text x="248" y="0" font-size="11" fill="#6b7280">publish - fire and forget</text>
+    <line x1="410" y1="-4" x2="440" y2="-4" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#sub)"/>
+    <text x="448" y="0" font-size="11" fill="#6b7280">subscribe - catch up eventually</text>
+  </g>
+  <text x="760" y="652" font-size="11" fill="#9ca3af">Bootcamp - Session 3, slide 13</text>
+</svg>
