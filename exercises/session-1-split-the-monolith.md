@@ -12,6 +12,11 @@ Pick whichever language you are most fluent in; all six are the same program.
 MONOLITH_IMPL=python docker compose up --build     # or java | typescript | csharp | go | ruby
 ```
 
+**Start that now and leave it running in a second terminal.** The first build pulls a
+base image and a language toolchain; on shared wifi that is minutes, and Java pulls the
+most. Only the proof in part 2 needs it — parts 1 and 3 are reading and arguing, so
+begin them while it builds.
+
 Read `db/schema.sql` first. It is forty lines and it tells you more about this system
 than the code does.
 
