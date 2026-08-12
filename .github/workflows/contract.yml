@@ -23,7 +23,7 @@ jobs:
         impl: [python, java, typescript, csharp, go, ruby]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build the image
         run: docker build -f monolith/${{ matrix.impl }}/Dockerfile -t store-under-test .
