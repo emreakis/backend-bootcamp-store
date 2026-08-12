@@ -2,7 +2,7 @@
   "name": "store-monolith",
   "version": "1.0.0",
   "private": true,
-  "description": "The Store as a modular monolith — Backend Bootcamp, Session 1",
+  "description": "The Store as a modular monolith — Bootcamp, Session 1",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && node dist/main.js"

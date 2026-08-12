@@ -15,7 +15,7 @@
     <artifactId>store-monolith</artifactId>
     <version>1.0.0</version>
     <name>store-monolith</name>
-    <description>The Store as a modular monolith — Backend Bootcamp, Session 1</description>
+    <description>The Store as a modular monolith — Bootcamp, Session 1</description>
 
     <properties>
         <java.version>21</java.version>

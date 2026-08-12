@@ -1,8 +1,8 @@
-# The Store — Backend Bootcamp
+# The Store — Bootcamp
 
 [![contract](https://github.com/emreakis/backend-bootcamp-store/actions/workflows/contract.yml/badge.svg)](https://github.com/emreakis/backend-bootcamp-store/actions/workflows/contract.yml)
 
-The running example for the three-session Backend Bootcamp. One small online store,
+The running example for the three-session Bootcamp. One small online store,
 built the same way six times, then pulled apart into services.
 
 > **Session 1 — Distributed architectures.** Today you get the *before* picture: the
