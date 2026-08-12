@@ -32,6 +32,12 @@ already agrees with the code.
 | `13-order-confirmed-events` | Session 3, slide 13 | who waits and who does not — and that the store ships no broker yet |
 | `14-timeouts-retries-breakers` | Session 3, slide 20 | the 6.25 s worst-case budget, drawn to scale, and the breaker's three states |
 
+They move. Open one on GitHub and messages travel the gRPC wires, the offset
+panel re-serves its row, the 6.25-second retry budget plays out against the
+breaker's three states. The motion is plain CSS and SMIL inside the SVG — no
+scripts — it honors `prefers-reduced-motion`, and any static renderer sees the
+still diagram, packets and all overlays hidden.
+
 They render directly on GitHub. For a PNG:
 
 ```bash

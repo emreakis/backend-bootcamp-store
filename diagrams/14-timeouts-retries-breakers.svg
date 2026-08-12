@@ -1,5 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640">
-  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .mono { font-family: Consolas, Menlo, monospace; }</style>
+  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .mono { font-family: Consolas, Menlo, monospace; }
+    .bar { animation: bar 8s ease-in-out infinite; } @keyframes bar { 0%, 3% { fill: #dbeafe; } 8% { fill: #93c5fd; } 24% { fill: #93c5fd; } 30%, 100% { fill: #dbeafe; } }.dl { animation: dl 8s linear infinite; } @keyframes dl { 0%, 24% { opacity: 0.25; } 27%, 100% { opacity: 1; } }.cust { stroke-dasharray: 690; stroke-dashoffset: 690; animation: cust 8s linear infinite; } @keyframes cust { 0% { stroke-dashoffset: 690; } 78%, 100% { stroke-dashoffset: 0; } }.state { animation: state 8s ease-in-out infinite; } @keyframes state { 0%, 4% { stroke-width: 1.5; } 9% { stroke-width: 3.5; } 28% { stroke-width: 3.5; } 33%, 100% { stroke-width: 1.5; } }.sweep { animation: sweep 8s linear infinite; } @keyframes sweep { 0% { transform: translateX(0); opacity: 0; } 2% { opacity: 0.6; } 76% { opacity: 0.6; } 78%, 100% { transform: translateX(688px); opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  </style>
   <defs>
     <marker id="st" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/></marker>
   </defs>
@@ -7,15 +10,15 @@
   <text x="60" y="46" font-size="18" font-weight="600" fill="#111827">Timeouts, retries, breakers - and the budget they add up to</text>
   <text x="60" y="68" font-size="12" fill="#6b7280">The deadline is per attempt. Three attempts and backoff spend 6.25 seconds of somebody's patience.</text>
   <text x="60" y="106" font-size="12" font-weight="600" fill="#9ca3af">1 DEADLINE + 2 BOUNDED RETRY - THE WORST CASE, TO SCALE</text>
-  <rect x="130" y="128" width="220" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <rect x="130" y="128" width="220" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5" class="bar" style="animation-delay: 0.0s"/>
   <text x="240.0" y="150" font-size="11.5" fill="#1e3a8a" text-anchor="middle">attempt 1 - 2000 ms</text>
-  <line x1="350" y1="124" x2="350" y2="166" stroke="#dc2626" stroke-width="2"/>
-  <rect x="364" y="128" width="220" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <line x1="350" y1="124" x2="350" y2="166" stroke="#dc2626" stroke-width="2" class="dl" style="animation-delay: 0.0s"/>
+  <rect x="364" y="128" width="220" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5" class="bar" style="animation-delay: 2.16s"/>
   <text x="474.0" y="150" font-size="11.5" fill="#1e3a8a" text-anchor="middle">attempt 2 - 2000 ms</text>
-  <line x1="584" y1="124" x2="584" y2="166" stroke="#dc2626" stroke-width="2"/>
-  <rect x="598" y="128" width="220" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <line x1="584" y1="124" x2="584" y2="166" stroke="#dc2626" stroke-width="2" class="dl" style="animation-delay: 2.16s"/>
+  <rect x="598" y="128" width="220" height="34" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5" class="bar" style="animation-delay: 4.32s"/>
   <text x="708.0" y="150" font-size="11.5" fill="#1e3a8a" text-anchor="middle">attempt 3 - 2000 ms</text>
-  <line x1="818" y1="124" x2="818" y2="166" stroke="#dc2626" stroke-width="2"/>
+  <line x1="818" y1="124" x2="818" y2="166" stroke="#dc2626" stroke-width="2" class="dl" style="animation-delay: 4.32s"/>
   <text x="357" y="121" font-size="10" fill="#dc2626">deadline exceeded</text>
   <text x="357" y="180" font-size="10" fill="#6b7280">backoff</text>
   <line x1="130" y1="196" x2="845" y2="196" stroke="#d1d5db" stroke-width="1"/>
@@ -33,20 +36,20 @@
   <text x="680" y="214" font-size="10" fill="#9ca3af" text-anchor="middle">5 s</text>
   <line x1="790" y1="193" x2="790" y2="199" stroke="#9ca3af" stroke-width="1"/>
   <text x="790" y="214" font-size="10" fill="#9ca3af" text-anchor="middle">6 s</text>
-  <line x1="130" y1="240" x2="818" y2="240" stroke="#dc2626" stroke-width="2"/>
+  <line x1="130" y1="240" x2="818" y2="240" stroke="#dc2626" stroke-width="2" class="cust"/>
   <line x1="130" y1="234" x2="130" y2="246" stroke="#dc2626" stroke-width="2"/>
   <line x1="818" y1="234" x2="818" y2="246" stroke="#dc2626" stroke-width="2"/>
   <text x="474.0" y="264" font-size="12" font-weight="600" fill="#991b1b" text-anchor="middle">3 x 2000 ms + 250 ms backoff = 6.25 s spent on an error</text>
   <text x="474.0" y="282" font-size="11" fill="#6b7280" text-anchor="middle">whoever calls checkout has a budget of their own - six seconds may already be over it</text>
   <text x="60" y="314" font-size="11" fill="#374151">Retrying a charge is legal only because <tspan class="mono" fill="#1e3a8a">ChargeRequest</tspan> carries <tspan class="mono" fill="#1e3a8a">idempotency_key = 4</tspan> - a repeated key returns the original response, not a second bill.</text>
   <text x="60" y="356" font-size="12" font-weight="600" fill="#9ca3af">3 CIRCUIT BREAKER - WHEN THE BUDGET KEEPS BEING SPENT, STOP SPENDING IT</text>
-  <rect x="140" y="386" width="180" height="48" rx="10" fill="#dcfce7" stroke="#86efac" stroke-width="1.5"/>
+  <rect x="140" y="386" width="180" height="48" rx="10" fill="#dcfce7" stroke="#86efac" stroke-width="1.5" class="state" style="animation-delay: 0.0s"/>
   <text x="230" y="406" font-size="13" font-weight="600" fill="#166534" text-anchor="middle">CLOSED</text>
   <text x="230" y="423" font-size="10.5" fill="#166534" text-anchor="middle">calls flow, failures counted</text>
-  <rect x="430" y="386" width="180" height="48" rx="10" fill="#fee2e2" stroke="#fca5a5" stroke-width="1.5"/>
+  <rect x="430" y="386" width="180" height="48" rx="10" fill="#fee2e2" stroke="#fca5a5" stroke-width="1.5" class="state" style="animation-delay: 2.66s"/>
   <text x="520" y="406" font-size="13" font-weight="600" fill="#991b1b" text-anchor="middle">OPEN</text>
   <text x="520" y="423" font-size="10.5" fill="#991b1b" text-anchor="middle">fail fast: 503 + Retry-After</text>
-  <rect x="700" y="386" width="180" height="48" rx="10" fill="#fef3c7" stroke="#fcd34d" stroke-width="1.5"/>
+  <rect x="700" y="386" width="180" height="48" rx="10" fill="#fef3c7" stroke="#fcd34d" stroke-width="1.5" class="state" style="animation-delay: 5.32s"/>
   <text x="790" y="406" font-size="13" font-weight="600" fill="#92400e" text-anchor="middle">HALF-OPEN</text>
   <text x="790" y="423" font-size="10.5" fill="#92400e" text-anchor="middle">exactly one probe</text>
   <line x1="320" y1="410" x2="422" y2="410" stroke="#6b7280" stroke-width="1.5" marker-end="url(#st)"/>
@@ -61,5 +64,6 @@
   <text x="510" y="494" font-size="10.5" fill="#6b7280" text-anchor="middle">the probe succeeds - close, and calls flow again</text>
   <text x="60" y="540" font-size="12" fill="#374151">A breaker that opens and never half-opens is a permanent outage you built yourself. The half-open probe is the whole trick.</text>
   <text x="60" y="560" font-size="11" fill="#6b7280">The four TODO(exercise 3.x) blocks in services/orders build exactly this ladder; SOLUTION.md carries these numbers.</text>
+  <line x1="130" y1="122" x2="130" y2="200" stroke="#111827" stroke-width="1" opacity="0" class="sweep"/>
   <text x="60" y="608" font-size="11" fill="#9ca3af">Bootcamp - Session 3, slide 20</text>
 </svg>

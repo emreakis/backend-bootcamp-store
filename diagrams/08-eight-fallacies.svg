@@ -1,5 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 640" width="960" height="640">
-  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }</style>
+  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+    .strike { transform-box: fill-box; transform-origin: left center; animation: strike 8s ease-out infinite; }@keyframes strike { 0%, 4% { transform: scaleX(0); } 12% { transform: scaleX(1); } 100% { transform: scaleX(1); } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  </style>
   <defs>
     <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
       <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
@@ -11,49 +14,49 @@
   <text x="60" y="108" font-size="11" font-weight="600" fill="#9ca3af">THE BELIEF</text>
   <text x="470" y="108" font-size="11" font-weight="600" fill="#9ca3af">THE DESIGN IT BECOMES</text>
   <text x="60" y="148" font-size="14" fill="#111827">The network is reliable</text>
-  <line x1="58" y1="143" x2="228" y2="143" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="143" x2="228" y2="143" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 0.0s"/>
   <line x1="400" y1="143" x2="448" y2="143" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="148" font-size="13.5" fill="#111827">every call can fail: deadline, bounded retry, breaker</text>
   <text x="470" y="165" font-size="11" fill="#6b7280">the Session 3 exercise, in that order</text>
   <line x1="60" y1="178" x2="900" y2="178" stroke="#f3f4f6" stroke-width="1"/>
   <text x="60" y="206" font-size="14" fill="#111827">Latency is zero</text>
-  <line x1="58" y1="201" x2="169" y2="201" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="201" x2="169" y2="201" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 0.5s"/>
   <line x1="400" y1="201" x2="448" y2="201" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="206" font-size="13.5" fill="#111827">a budget on every hop, set by the caller</text>
   <text x="470" y="223" font-size="11" fill="#6b7280">orders gives a charge 2000 ms, not forever</text>
   <line x1="60" y1="236" x2="900" y2="236" stroke="#f3f4f6" stroke-width="1"/>
   <text x="60" y="264" font-size="14" fill="#111827">Bandwidth is infinite</text>
-  <line x1="58" y1="259" x2="213" y2="259" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="259" x2="213" y2="259" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 1.0s"/>
   <line x1="400" y1="259" x2="448" y2="259" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="264" font-size="13.5" fill="#111827">page collections, stream what cannot be paged</text>
   <text x="470" y="281" font-size="11" fill="#6b7280">GET /v1/products?limit=20&amp;cursor=ESP-001</text>
   <line x1="60" y1="294" x2="900" y2="294" stroke="#f3f4f6" stroke-width="1"/>
   <text x="60" y="322" font-size="14" fill="#111827">The network is secure</text>
-  <line x1="58" y1="317" x2="213" y2="317" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="317" x2="213" y2="317" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 1.5s"/>
   <line x1="400" y1="317" x2="448" y2="317" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="322" font-size="13.5" fill="#111827">encrypt in transit, authenticate every caller</text>
   <text x="470" y="339" font-size="11" fill="#6b7280">inside the compose network is still a network</text>
   <line x1="60" y1="352" x2="900" y2="352" stroke="#f3f4f6" stroke-width="1"/>
   <text x="60" y="380" font-size="14" fill="#111827">Topology doesn't change</text>
-  <line x1="58" y1="375" x2="228" y2="375" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="375" x2="228" y2="375" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 2.0s"/>
   <line x1="400" y1="375" x2="448" y2="375" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="380" font-size="13.5" fill="#111827">call names, never addresses</text>
   <text x="470" y="397" font-size="11" fill="#6b7280">http://catalog:8000 - compose DNS, not an IP</text>
   <line x1="60" y1="410" x2="900" y2="410" stroke="#f3f4f6" stroke-width="1"/>
   <text x="60" y="438" font-size="14" fill="#111827">There is one administrator</text>
-  <line x1="58" y1="433" x2="250" y2="433" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="433" x2="250" y2="433" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 2.5s"/>
   <line x1="400" y1="433" x2="448" y2="433" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="438" font-size="13.5" fill="#111827">one owning team per service, on call for it</text>
   <text x="470" y="455" font-size="11" fill="#6b7280">catalog can migrate on a Tuesday without a meeting</text>
   <line x1="60" y1="468" x2="900" y2="468" stroke="#f3f4f6" stroke-width="1"/>
   <text x="60" y="496" font-size="14" fill="#111827">Transport cost is zero</text>
-  <line x1="58" y1="491" x2="221" y2="491" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="491" x2="221" y2="491" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 3.0s"/>
   <line x1="400" y1="491" x2="448" y2="491" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="496" font-size="13.5" fill="#111827">batch chatty calls, keep hot paths in-process</text>
   <text x="470" y="513" font-size="11" fill="#6b7280">serialization + a round trip is never free</text>
   <line x1="60" y1="526" x2="900" y2="526" stroke="#f3f4f6" stroke-width="1"/>
   <text x="60" y="554" font-size="14" fill="#111827">The network is homogeneous</text>
-  <line x1="58" y1="549" x2="250" y2="549" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="58" y1="549" x2="250" y2="549" stroke="#dc2626" stroke-width="1.5" class="strike" style="animation-delay: 3.5s"/>
   <line x1="400" y1="549" x2="448" y2="549" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
   <text x="470" y="554" font-size="13.5" fill="#111827">pin the wire format in a contract</text>
   <text x="470" y="571" font-size="11" fill="#6b7280">OpenAPI at the edge, payments.proto inside</text>

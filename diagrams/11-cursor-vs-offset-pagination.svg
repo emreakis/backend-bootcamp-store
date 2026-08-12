@@ -1,5 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 680" width="960" height="680">
-  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .mono { font-family: Consolas, Menlo, monospace; }</style>
+  <style>text { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; } .mono { font-family: Consolas, Menlo, monospace; }
+    .newrow { animation: neworange 2.4s ease-in-out infinite; } @keyframes neworange { 50% { fill: #fdba74; } }.dup { animation: dupred 2.4s ease-in-out infinite; } @keyframes dupred { 50% { fill: #fecaca; } }.ins { animation: insp 2.4s ease-in-out infinite; } @keyframes insp { 50% { opacity: 0.4; } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  </style>
   <defs>
     <marker id="ins" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/></marker>
   </defs>
@@ -19,15 +22,15 @@
   <text x="92" y="239" font-size="11" class="mono" fill="#111827">GRD-002</text>
   <rect x="82" y="250" width="118" height="22" rx="4" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
   <text x="92" y="265" font-size="11" class="mono" fill="#111827">ROA-008</text>
-  <line x1="82" y1="316" x2="112" y2="316" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ins)"/>
+  <line x1="82" y1="316" x2="112" y2="316" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ins)" class="ins"/>
   <text x="120" y="320" font-size="11" fill="#ea580c">someone inserts CFE-010</text>
   <text x="82" y="352" font-size="10.5" class="mono" fill="#374151">GET /v1/products?limit=2&amp;offset=2</text>
   <rect x="82" y="366" width="118" height="22" rx="4" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
   <text x="92" y="381" font-size="11" class="mono" fill="#111827">BNS-005</text>
-  <rect x="82" y="392" width="118" height="22" rx="4" fill="#fed7aa" stroke="#ea580c" stroke-width="1"/>
+  <rect x="82" y="392" width="118" height="22" rx="4" fill="#fed7aa" class="newrow" stroke="#ea580c" stroke-width="1"/>
   <text x="92" y="407" font-size="11" class="mono" fill="#111827">CFE-010</text>
   <text x="208" y="407" font-size="10.5" fill="#ea580c">new</text>
-  <rect x="82" y="418" width="118" height="22" rx="4" fill="#fee2e2" stroke="#ef4444" stroke-width="1"/>
+  <rect x="82" y="418" width="118" height="22" rx="4" fill="#fee2e2" class="dup" stroke="#ef4444" stroke-width="1"/>
   <text x="92" y="433" font-size="11" class="mono" fill="#111827">ESP-001</text>
   <text x="208" y="433" font-size="10.5" fill="#ef4444">page 2 - again</text>
   <rect x="82" y="444" width="118" height="22" rx="4" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
@@ -51,12 +54,12 @@
   <rect x="512" y="250" width="118" height="22" rx="4" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
   <text x="522" y="265" font-size="11" class="mono" fill="#111827">ROA-008</text>
   <text x="512" y="296" font-size="10.5" class="mono" fill="#6b7280">next_cursor: ESP-001</text>
-  <line x1="512" y1="316" x2="542" y2="316" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ins)"/>
+  <line x1="512" y1="316" x2="542" y2="316" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ins)" class="ins"/>
   <text x="550" y="320" font-size="11" fill="#ea580c">someone inserts CFE-010</text>
   <text x="512" y="352" font-size="10.5" class="mono" fill="#374151">GET /v1/products?limit=2&amp;cursor=ESP-001</text>
   <rect x="512" y="366" width="118" height="22" rx="4" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
   <text x="522" y="381" font-size="11" class="mono" fill="#111827">BNS-005</text>
-  <rect x="512" y="392" width="118" height="22" rx="4" fill="#fed7aa" stroke="#ea580c" stroke-width="1"/>
+  <rect x="512" y="392" width="118" height="22" rx="4" fill="#fed7aa" class="newrow" stroke="#ea580c" stroke-width="1"/>
   <text x="522" y="407" font-size="11" class="mono" fill="#111827">CFE-010</text>
   <text x="638" y="407" font-size="10.5" fill="#ea580c">new</text>
   <rect x="512" y="418" width="118" height="22" rx="4" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
