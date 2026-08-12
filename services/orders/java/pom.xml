@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.3</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>io.backendguru</groupId>
+    <artifactId>orders-service</artifactId>
+    <version>1.0.0</version>
+    <name>orders-service</name>
+    <description>The orchestrator — REST at the edge, gRPC inside</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <grpc.version>1.73.0</grpc.version>
+        <!-- MUST match the protobuf-java runtime that grpc-protobuf pulls in — check
+             with `mvn dependency:tree` before changing either number.
+
+             Generated code and its runtime library are one unit. protoc emits calls
+             into protobuf-java, and a newer protoc emits calls a newer runtime is
+             required to have: build this with protoc 4.31 against grpc 1.73, which
+             ships protobuf-java 3.25.5, and you get
+
+                 cannot find symbol: method resolveAllFeaturesImmutable()
+
+             at compile time — a version skew masquerading as a missing method. The
+             same trap exists in every language with a protobuf plugin; Java just
+             tells you about it early and clearly. -->
+        <protobuf.version>3.25.5</protobuf.version>
+        <protobuf-java.version>${protobuf.version}</protobuf-java.version>
+        <!-- Where the contract lives. Overridden in the Dockerfile with
+             -Dproto.dir=/contracts/proto, because the build context there is flat. -->
+        <proto.dir>${project.basedir}/../../../contracts/proto</proto.dir>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.7</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- gRPC. Three artifacts, and they do different jobs: netty-shaded is the
+             transport, protobuf is the message codec, stub is the generated-client
+             runtime. Shaded because Netty version conflicts are a genuine hazard in
+             a Spring application. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+
+        <!-- The gRPC code generator emits @javax.annotation.Generated, which left the
+             JDK in Java 9. Compile-time only. -->
+        <dependency>
+            <groupId>org.apache.tomcat</groupId>
+            <artifactId>annotations-api</artifactId>
+            <version>6.0.53</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>orders</finalName>
+
+        <extensions>
+            <!-- Detects the OS and CPU so the right prebuilt protoc binary is
+                 downloaded. This is why the build needs no protoc installed. -->
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
+
+        <plugins>
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>0.6.1</version>
+                <configuration>
+                    <protoSourceRoot>${proto.dir}</protoSourceRoot>
+                    <protocArtifact>
+                        com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}
+                    </protocArtifact>
+                    <pluginId>grpc-java</pluginId>
+                    <pluginArtifact>
+                        io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}
+                    </pluginArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <!-- `compile` makes the message classes, `compile-custom`
+                                 runs the gRPC plugin to make the stubs. One .proto,
+                                 two generators — exactly as in Go, Python and the
+                                 rest. -->
+                            <goal>compile</goal>
+                            <goal>compile-custom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

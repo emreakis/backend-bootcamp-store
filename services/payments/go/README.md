@@ -59,15 +59,21 @@ contract and not yet in this deployment".
 ## Making it fail, on demand
 
 ```bash
-docker compose stop payments                     # DOWN: connections refused instantly
-docker compose up -d payments                    # back
-PAYMENT_LATENCY_MS=30000 docker compose up -d payments   # SLOW: the bad one
+docker compose stop payments                             # DOWN
+docker compose start payments                            # back
+PAYMENT_LATENCY_MS=30000 docker compose up -d payments   # SLOW
 ```
 
-Slow is worse than down, and it is the failure Session 3 is really about. A service
-that is down refuses your connection immediately and you find out at once. A service
-that is slow accepts it and holds it, and every caller waits politely until its thread
-pool is empty.
+Both of these hang a caller that has no deadline, and the first one is the surprise.
+It is tempting to assume a stopped server refuses connections and the call fails at
+once. On a container network it does not: nothing is listening, so the SYN packets are
+dropped rather than refused, and the connect waits out a TCP timeout measured in
+minutes.
+
+Which is the actual lesson. **To a caller with no deadline, "down" and "slow" are the
+same thing** — so the deadline, not the outage, is what you fix first. Only after that
+does the difference between them start to matter, and that is where retries and a
+breaker come in.
 
 `Charge` waits on the injected latency *and* on the caller's context at the same time,
 so when the caller's deadline expires the server stops working immediately and logs

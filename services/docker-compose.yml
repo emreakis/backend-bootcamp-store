@@ -14,12 +14,16 @@
 #
 #  TO BREAK IT ON PURPOSE (the Session 3 exercise):
 #
-#      docker compose stop payments            # payments is DOWN
-#      docker compose up -d -e PAYMENT_LATENCY_MS=30000 payments   # payments is SLOW
+#      docker compose stop payments                              # payments is DOWN
+#      PAYMENT_LATENCY_MS=30000 docker compose up -d payments    # payments is SLOW
 #
-#  The second one is worse, and it is the one that teaches. A service that is down
-#  refuses connections immediately; a service that is slow accepts them and holds
-#  them, and every checkout thread waits politely until the pool is empty.
+#  Both hang, and the first one is the surprise. Surely a stopped server refuses
+#  connections and the call fails at once? Not on a container network: nothing is
+#  listening, so the SYN packets are dropped rather than refused, and the connect
+#  waits for a TCP timeout measured in minutes.
+#
+#  To a caller with no deadline, "down" and "slow" are the same thing. That is why
+#  the deadline, and not the outage, is what Session 3 fixes first.
 # =============================================================================
 
 name: store-services
@@ -112,11 +116,15 @@ services:
     environment:
       PORT: 50051
       # Deterministic on purpose. ROA-008 costs 529900, so ordering one declines.
-      PAYMENT_DECLINE_OVER_CENTS: 500000
-      PAYMENT_ALWAYS_DECLINE: "false"
+      PAYMENT_DECLINE_OVER_CENTS: ${PAYMENT_DECLINE_OVER_CENTS:-500000}
+      PAYMENT_ALWAYS_DECLINE: "${PAYMENT_ALWAYS_DECLINE:-false}"
       # The exercise dial. Raise it above the orders timeout (2000 ms) and payments
       # stops being down and starts being slow — the failure that actually hurts.
-      PAYMENT_LATENCY_MS: 0
+      #
+      # Written as ${VAR:-default}, not a bare value: compose's `environment` block
+      # WINS over the surrounding shell, so a hardcoded 0 here would silently ignore
+      # `PAYMENT_LATENCY_MS=30000 docker compose up` and the dial would do nothing.
+      PAYMENT_LATENCY_MS: ${PAYMENT_LATENCY_MS:-0}
     ports:
       - "50051:50051"   # published so you can poke it with grpcurl
 
@@ -145,11 +153,11 @@ services:
       #
       # The default value of a missing timeout is FOREVER, which is the worst
       # possible value. These four lines are what Session 3 builds.
-      CATALOG_TIMEOUT_MS: 1000
-      PAYMENTS_TIMEOUT_MS: 2000
-      PAYMENTS_RETRY_MAX: 2
-      BREAKER_FAILURE_THRESHOLD: 5
-      BREAKER_RESET_MS: 10000
+      CATALOG_TIMEOUT_MS: ${CATALOG_TIMEOUT_MS:-1000}
+      PAYMENTS_TIMEOUT_MS: ${PAYMENTS_TIMEOUT_MS:-2000}
+      PAYMENTS_RETRY_MAX: ${PAYMENTS_RETRY_MAX:-2}
+      BREAKER_FAILURE_THRESHOLD: ${BREAKER_FAILURE_THRESHOLD:-5}
+      BREAKER_RESET_MS: ${BREAKER_RESET_MS:-10000}
     ports:
       - "8080:8080"
     depends_on:

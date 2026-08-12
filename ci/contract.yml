@@ -1,0 +1,47 @@
+# Every implementation, every push, against the same 66 checks.
+#
+# This workflow is the claim on the front page made continuous: the six behave
+# identically, and if one of them drifts, this is what says so. It is also a preview of
+# the conformance suite Session 3 runs against the three services.
+
+name: contract
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  conformance:
+    name: ${{ matrix.impl }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Don't cancel the other five when one fails — the interesting information is
+      # which ones drifted, not just that something did.
+      fail-fast: false
+      matrix:
+        impl: [python, java, typescript, csharp, go, ruby]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -f monolith/${{ matrix.impl }}/Dockerfile -t store-under-test .
+
+      - name: Start it
+        run: docker run -d --name store -p 8080:8080 store-under-test
+
+      - name: Wait for health
+        run: |
+          for _ in $(seq 1 60); do
+            curl -fsS http://localhost:8080/health >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "never became healthy"; exit 1
+
+      - name: Check the contract
+        run: python3 tools/smoke.py http://localhost:8080
+
+      - name: Logs, if it went wrong
+        if: failure()
+        run: docker logs store
