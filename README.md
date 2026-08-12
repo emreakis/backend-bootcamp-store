@@ -174,6 +174,7 @@ services/           Session 3 — the same store as three services, six language
   db/               one schema per service, in separate Postgres containers
   docker-compose.yml
 conformance/        contract.py and resilience.py — language-neutral, stdlib only
+                    slides.py — the decks, checked against the code they describe
 exercises/          the in-session exercises
 tools/smoke.py      language-neutral contract check for the monolith
 ```
