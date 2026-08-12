@@ -50,16 +50,33 @@ services conformance suite. Notice the absence. It cost something.
 
 ## What breaks — the Session 3 exercise
 
-The thing that *does* go wrong here is availability, and it goes wrong quietly:
+The thing that *does* go wrong here is availability, and it goes wrong quietly. Three
+ways to break payments, and they are not the same failure:
 
 ```bash
-docker compose stop payments
+PAYMENT_LATENCY_MS=30000 docker compose up -d payments   # SLOW: accepts, then holds
+docker compose pause payments                            # BLACK HOLE: packets vanish
+docker compose stop payments                             # DOWN: it depends
 ```
 
-Then watch `orders` — a completely healthy service — die of somebody else's outage.
-Every checkout thread blocks on a call that will never return, the pool drains, the
-queue grows, and a payments outage has become a store outage. That is *the network is
-reliable* collecting its debt.
+The first two hang, in every language, every time. Watch `orders` — a completely
+healthy service — die of somebody else's outage: every checkout blocks on a call that
+will never return, the pool drains, the queue grows, and a payments outage has become a
+store outage. That is *the network is reliable* collecting its debt.
+
+The third is the one worth doing live, because it refuses to be one behaviour. Measured
+across the six orders implementations, with no deadline anywhere:
+
+| orders | how long a stopped payments takes to fail |
+|---|---|
+| C# | ~4 s |
+| Python, Go, Ruby | ~20 s — the gRPC library's own connect timeout |
+| Java, TypeScript | still waiting after 25 s |
+
+Same outage, same contract, four seconds to never. **That is the argument for the
+deadline**: without one, how long a checkout hangs is a property of somebody else's
+library default rather than a number anybody chose. Twenty seconds is not "fast" for a
+checkout either — it is a hang with extra steps.
 
 Fixing it, in order of importance:
 
@@ -84,10 +101,21 @@ is the lesson, in whichever language the room asks for.
 `conformance/` runs the contracts in `../contracts/` against whatever is running, plus a
 class of checks the monolith could never have needed:
 
-| Tag | Asserts |
+```bash
+python conformance/contract.py                    # 87 checks, HTTP only, stdlib only
+python conformance/resilience.py                  # the STARTER behaviour
+python conformance/resilience.py --expect-fixed   # the SOLUTION behaviour
+```
+
+| File | Asserts |
 |-----|---------|
-| `CONTRACT` | Every response matches the OpenAPI and proto definitions |
-| `RESILIENCE` | With payments stopped, checkout fails **fast** and says so — and `/health` still returns 200, because orders is not sick, its dependency is |
+| `contract.py` | Every response matches the OpenAPI definitions, in any combination of the six languages. Payments is only ever reached *through* orders, because that is the only way anything in this store reaches it |
+| `resilience.py` | By default, that a slow or black-holed payments **hangs** checkout while `/health` keeps answering `ok`. With `--expect-fixed`, that the same outage produces a fast `503` carrying `Retry-After`, and that the system recovers without restarting orders |
+
+`resilience.py` is the exercise as a test, and it is worth noticing that its default
+mode consists of passing assertions describing a broken system. That is an odd thing to
+write down until you see the alternative: a broken system nobody wrote down. The four
+`TODO` blocks are the diff between its two modes.
 
 That second row is the whole session. A distributed system that fails loudly is a
 system you can operate; one that fails quietly, one hung thread at a time, is not.

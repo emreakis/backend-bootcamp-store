@@ -122,16 +122,54 @@ These are not nostalgia. They are the bill Session 3 pays:
 
 On Saturday, all three go away. Sessions 2 and 3 are about what you build to replace them.
 
+## The same store, as three services
+
+Sessions 2 and 3 take the picture above apart. Same store, same data, same behaviour —
+now three processes, two databases, two protocols, and every combination of the six
+languages:
+
+```bash
+cd services
+docker compose up --build                                        # the defaults
+CATALOG_IMPL=go ORDERS_IMPL=csharp PAYMENTS_IMPL=ruby docker compose up --build
+```
+
+**Eighteen implementations, 216 combinations, one set of contracts.** That is the
+"smart endpoints, dumb pipes" argument in a command line: a container is an interface,
+and behind it the language is nobody's business.
+
+| | Protocol | Languages |
+|---|---|---|
+| [`services/catalog`](services/catalog) | REST, read-only | all six |
+| [`services/orders`](services/orders) | REST in, gRPC out — the orchestrator, and where the exercise lives | all six |
+| [`services/payments`](services/payments) | gRPC only, no HTTP, no database | all six |
+
+Check any combination:
+
+```bash
+python conformance/contract.py                    # 87 checks, HTTP only, stdlib only
+python conformance/resilience.py                  # the exercise, before
+python conformance/resilience.py --expect-fixed   # the exercise, after
+```
+
+The `solution` branch fills in the four `TODO (exercise 3.x)` blocks in all six
+languages, so `git diff main solution -- services/orders/go` is the answer sheet. See
+[SOLUTION.md](https://github.com/emreakis/backend-bootcamp-store/blob/solution/SOLUTION.md).
+
 ## Layout
 
 ```
-db/                 schema.sql + seed.sql — shared by all six implementations
+db/                 schema.sql + seed.sql — shared by all six monolith implementations
 monolith/           the six implementations, plus the API contract they all satisfy
   API.md            the exact contract: endpoints, status codes, error envelope
-contracts/          Session 2 — OpenAPI and protobuf (published after the session)
-services/           Session 3 — the same store as three services
+contracts/          Session 2 — OpenAPI 3.1 for the two REST services, protobuf for the
+                    internal hop, and one shared RFC 9457 error envelope
+services/           Session 3 — the same store as three services, six languages each
+  db/               one schema per service, in separate Postgres containers
+  docker-compose.yml
+conformance/        contract.py and resilience.py — language-neutral, stdlib only
 exercises/          the in-session exercises
-tools/smoke.sh      language-neutral contract check
+tools/smoke.py      language-neutral contract check for the monolith
 ```
 
 ## Sessions
@@ -139,8 +177,8 @@ tools/smoke.sh      language-neutral contract check
 | # | Title | Exercise |
 |---|-------|----------|
 | 1 | Distributed architectures | [Split this monolith](exercises/session-1-split-the-monolith.md) |
-| 2 | API design | Design the orders API |
-| 3 | Building microservices | Break the system, then fix it |
+| 2 | API design | Review the [contracts](contracts) before the code that satisfies them exists |
+| 3 | Building microservices | Break the system with `conformance/resilience.py`, then fix it |
 
 Session 3 needs Docker. Please install it before Saturday and run the command above
 once, so a slow first `docker pull` does not cost you the exercise.

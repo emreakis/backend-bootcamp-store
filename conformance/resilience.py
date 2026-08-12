@@ -187,17 +187,65 @@ def main() -> int:
           f"got {status} {body!r}")
 
     # =======================================================================
-    #  PAYMENTS IS DOWN. The surprise.
+    #  PAYMENTS IS A BLACK HOLE. `pause`, not `stop`.
     #
-    #  It is tempting to assume a stopped server refuses connections and the call
-    #  fails at once. On a container network it does not: nothing is listening,
-    #  so the SYN packets are dropped rather than refused, and the connect waits
-    #  out a TCP timeout measured in minutes.
+    #  A paused container keeps its address and its socket, and answers nothing.
+    #  SYN packets arrive and are never acknowledged, which is what a crashed host,
+    #  a dropped route or a network partition looks like from the outside — and
+    #  unlike `stop`, it behaves identically in every language.
     #
-    #  To a caller with no deadline, "down" and "slow" are the same thing — which
-    #  is why the deadline, not the outage, is what you fix first.
+    #  To a caller with no deadline this is indistinguishable from "slow", which is
+    #  the point: the deadline, not the outage, is what you fix first.
     # =======================================================================
-    print(f"\n{DIM}payments DOWN (stopped){RESET}\n")
+    print(f"\n{DIM}payments BLACK-HOLED (paused){RESET}\n")
+    compose("unpause", "payments")     # in case a previous run died mid-flight
+    compose("pause", "payments")
+    time.sleep(2)
+
+    status, payload, headers, took = post_order(args.orders, args.patience)
+
+    if args.expect_fixed:
+        check("black hole: checkout fails fast", took < 10.0, f"took {took:.2f}s")
+        check("black hole: 503", status == 503, f"got {status}")
+        check("black hole: type is payments-unavailable",
+              isinstance(payload, dict)
+              and str(payload.get("type", "")).endswith("payments-unavailable"),
+              f"got {payload!r}")
+    else:
+        check(f"black hole: checkout HANGS TOO (no answer in {args.patience:.0f}s)",
+              status == 0,
+              f"got {status} after {took:.2f}s — this should look exactly like 'slow'")
+
+    status, body = health(args.orders)
+    check("black hole: /health still says ok",
+          status == 200 and isinstance(body, dict) and body.get("status") == "ok",
+          f"got {status} {body!r}")
+
+    compose("unpause", "payments")
+    time.sleep(3)
+
+    # =======================================================================
+    #  PAYMENTS IS STOPPED. Measured, and deliberately NOT asserted in starter mode.
+    #
+    #  This is the one people expect to be simple, and it is the one that is not.
+    #  A stopped container loses its DNS entry and its address, so the failure
+    #  arrives through a different path than the black hole above — and how long
+    #  that takes is decided entirely by the gRPC library you happen to be using.
+    #
+    #  Measured on this stack, with no deadline anywhere:
+    #
+    #      C#                  fails in ~4 s
+    #      Python, Go, Ruby    fail in ~20 s   (the library's own connect timeout)
+    #      Java, TypeScript    still waiting after 25 s
+    #
+    #  Same outage, same contract, four seconds to never. THAT is the argument for
+    #  the deadline: without one, how long your checkout hangs is a property of
+    #  somebody else's default. Twenty seconds is not "fast" for a checkout either;
+    #  it is a hang with extra steps.
+    #
+    #  So this is only asserted once a deadline exists, where all six agree.
+    # =======================================================================
+    print(f"\n{DIM}payments DOWN (stopped) — timing varies by language{RESET}\n")
     compose("stop", "payments")
     time.sleep(3)
 
@@ -211,9 +259,9 @@ def main() -> int:
               and str(payload.get("type", "")).endswith("payments-unavailable"),
               f"got {payload!r}")
     else:
-        check(f"down: checkout HANGS TOO (no answer in {args.patience:.0f}s)",
-              status == 0,
-              f"got {status} after {took:.2f}s — 'down' should look exactly like 'slow'")
+        answer = "no answer" if status == 0 else f"{status}"
+        print(f"  {DIM}note{RESET}  down: {answer} after {took:.2f}s "
+              f"— not asserted, because this is your library's number and not yours")
 
     status, body = health(args.orders)
     check("down: /health still says ok",

@@ -39,10 +39,25 @@ throughout. Those are passing tests describing a broken system. This branch is w
 | 3.4 | the catalog client | Connect and read timeouts |
 
 **3.1 first, always.** Delete the retry and the breaker and this service still degrades
-honestly; delete the deadline and nothing else can save it. Before it, "payments is down"
-and "payments is slow" are the same event — a hang — because a caller with no deadline
-cannot tell those apart. After it, they are different failures, which is what makes the
-other three exercises mean anything.
+honestly; delete the deadline and nothing else can save it.
+
+Here is the measurement that makes the case, taken on `main` with no deadline anywhere.
+Same outage — `docker compose stop payments` — same contract, six languages:
+
+| orders | how long checkout takes to fail |
+|---|---|
+| C# | ~4 s |
+| Python, Go, Ruby | ~20 s — the gRPC library's own connect timeout |
+| Java, TypeScript | still waiting after 25 s |
+
+Four seconds to never, and not one of those numbers was chosen by anybody who works on
+this store. Without a deadline, how long a checkout hangs is a property of somebody
+else's library default. Twenty seconds is not "fast" for a checkout either — it is a hang
+with extra steps. On this branch all six answer in the same 6.25 s worst case, because
+that number is now written down.
+
+(A *paused* payments — the deterministic black hole, and what a crashed host or a network
+partition looks like from the outside — hangs all six on `main`, every time.)
 
 **3.2 is only legal because of the idempotency key.** `ChargeRequest` carries one, and
 payments returns the original response for a key it has seen. Take that field away and

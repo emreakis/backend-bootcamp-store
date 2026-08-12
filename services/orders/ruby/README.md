@@ -1,5 +1,9 @@
 # orders — Ruby (Sinatra + grpc)
 
+> **You are on the `solution` branch.** The four `TODO (exercise 3.x)` blocks this
+> page describes are already filled in here. See [SOLUTION.md](../../../SOLUTION.md), or
+> `git diff main solution -- services/orders/ruby` for just this one.
+
 The orchestrator. REST at the edge, gRPC inside, two databases it cannot join across,
 and the only service in this system that can be woken up by somebody else's outage.
 
@@ -24,16 +28,32 @@ Four `TODO (exercise 3.x)` blocks, in the order they matter:
 Prove you need them before you write them:
 
 ```bash
-docker compose stop payments                              # payments is DOWN
-PAYMENT_LATENCY_MS=30000 docker compose up -d payments    # payments is SLOW
+PAYMENT_LATENCY_MS=30000 docker compose up -d payments   # SLOW
+docker compose pause payments                            # BLACK HOLE
 curl -X POST localhost:8080/v1/orders ... # hangs, both times
 curl localhost:8080/health                # still {"status":"ok"} — healthy, and useless
 ```
 
-Both hang, and the first is the surprise: on a container network a stopped server does
-not refuse connections, it swallows them, so the connect waits out a TCP timeout
-measured in minutes. **To a caller with no deadline, "down" and "slow" are the same
-thing.** Fix the deadline first; only then does the difference start to matter.
+Both hang, in every language, every time. A slow server accepts your connection and
+then never answers; a **paused** one keeps its address and takes your SYN packets
+without acknowledging them, which is what a crashed host or a network partition looks
+like from the outside.
+
+Now try the third one, `docker compose stop payments`, and watch it refuse to be one
+behaviour. Measured on this stack with no deadline anywhere:
+
+| orders | how long a stopped payments takes to fail |
+|---|---|
+| C# | ~4 s |
+| Python, Go, Ruby | ~20 s — the gRPC library's own connect timeout |
+| Java, TypeScript | still waiting after 25 s |
+
+Same outage, same contract, four seconds to never. **That** is the argument for the
+deadline: without one, how long your checkout hangs is a property of somebody else's
+default rather than a number you chose. Twenty seconds is not "fast" for a checkout
+either — it is a hang with extra steps.
+
+Fix the deadline first, and all six agree.
 
 The `solution` branch has all four filled in — `git diff main solution -- services/orders/ruby`.
 
