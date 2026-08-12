@@ -10,10 +10,22 @@
 //  describe services that were written by hand and could, in principle, lie. This
 //  one cannot: nothing exists until the .proto does.
 //
-//  Regenerate with:
-//      buf generate                      # if you have buf
-//      protoc --<lang>_out=… payments.v1.proto
-//  Each service directory has the exact command in its README.
+//  WHY THIS FILE LIVES SO DEEP IN A DIRECTORY TREE.
+//
+//  Its path — bootcamp/payments/v1/payments.proto — mirrors its package,
+//  bootcamp.payments.v1, and that is not decoration. protoc derives generated
+//  filenames from the path a file was found at, relative to the include root. Name
+//  this `payments.v1.proto` in a flat directory, as an earlier draft of this repo
+//  did, and Python gets a module called `payments/v1_pb2.py`: a package named
+//  `payments` that will collide with the next service anyone adds.
+//
+//  So the layout is the convention (the one `buf` enforces): one directory per
+//  package segment, the version as its own directory, and the filename naming the
+//  thing rather than repeating the version.
+//
+//  Regenerate with, from the repo root:
+//      protoc -I contracts/proto --<lang>_out=… bootcamp/payments/v1/payments.proto
+//  Every service Dockerfile runs exactly that line; each README has its variant.
 // =============================================================================
 
 syntax = "proto3";

@@ -1,0 +1,175 @@
+# =============================================================================
+#  THE STORE, AS THREE SERVICES.
+# =============================================================================
+#
+#      cd services && docker compose up --build
+#
+#  Any language, any combination — the image changes, nothing else does:
+#
+#      CATALOG_IMPL=go ORDERS_IMPL=csharp PAYMENTS_IMPL=ruby docker compose up --build
+#
+#  That is the whole "smart endpoints, dumb pipes" argument in one command line. A
+#  container is an interface; behind it the language is nobody's business, because
+#  the contracts in ../contracts/ are what the services actually agreed on.
+#
+#  TO BREAK IT ON PURPOSE (the Session 3 exercise):
+#
+#      docker compose stop payments            # payments is DOWN
+#      docker compose up -d -e PAYMENT_LATENCY_MS=30000 payments   # payments is SLOW
+#
+#  The second one is worse, and it is the one that teaches. A service that is down
+#  refuses connections immediately; a service that is slow accepts them and holds
+#  them, and every checkout thread waits politely until the pool is empty.
+# =============================================================================
+
+name: store-services
+
+services:
+
+  # ---------------------------------------------------------------------------
+  #  Two databases. Not one database with two schemas — two servers, two sets of
+  #  credentials, no possibility of a join.
+  #
+  #  Share a database between services and you have not built two services; you have
+  #  built one service with two front doors and a schema neither team can change
+  #  alone. The physical separation is what makes the independence real.
+  # ---------------------------------------------------------------------------
+
+  catalog-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: store
+      POSTGRES_PASSWORD: store
+      POSTGRES_DB: catalog
+    # Postgres runs everything in this directory on first boot. Schema and seed are
+    # plain .sql on purpose: six languages share them, and none of them needs to
+    # bring a migration tool to the party.
+    volumes:
+      - ./db/catalog:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"   # published so you can psql in and see that it really is separate
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U store -d catalog"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  orders-db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: store
+      POSTGRES_PASSWORD: store
+      POSTGRES_DB: orders
+    volumes:
+      - ./db/orders:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U store -d orders"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  #  catalog — REST, read-only, the simplest service in the system.
+  # ---------------------------------------------------------------------------
+
+  catalog:
+    build:
+      context: ..     # repo root, so the image can reach ../contracts/
+      dockerfile: services/catalog/${CATALOG_IMPL:-python}/Dockerfile
+    image: bootcamp/catalog-${CATALOG_IMPL:-python}
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgres://store:store@catalog-db:5432/catalog
+    ports:
+      - "8000:8000"
+    depends_on:
+      catalog-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  #  payments — gRPC only, and no database at all.
+  #
+  #  Nothing outside the system ever calls it directly, which is exactly why it does
+  #  not need REST. It fronts a stubbed card provider and keeps its idempotency
+  #  records in memory — which means a restart forgets them. That is a real
+  #  limitation, left visible rather than hidden: in production this is a datastore,
+  #  and "where do idempotency keys live" is a design question with real answers.
+  # ---------------------------------------------------------------------------
+
+  payments:
+    build:
+      context: ..
+      dockerfile: services/payments/${PAYMENTS_IMPL:-go}/Dockerfile
+    image: bootcamp/payments-${PAYMENTS_IMPL:-go}
+    environment:
+      PORT: 50051
+      # Deterministic on purpose. ROA-008 costs 529900, so ordering one declines.
+      PAYMENT_DECLINE_OVER_CENTS: 500000
+      PAYMENT_ALWAYS_DECLINE: "false"
+      # The exercise dial. Raise it above the orders timeout (2000 ms) and payments
+      # stops being down and starts being slow — the failure that actually hurts.
+      PAYMENT_LATENCY_MS: 0
+    ports:
+      - "50051:50051"   # published so you can poke it with grpcurl
+
+  # ---------------------------------------------------------------------------
+  #  orders — REST at the edge, a gRPC client inside. The orchestrator.
+  # ---------------------------------------------------------------------------
+
+  orders:
+    build:
+      context: ..
+      dockerfile: services/orders/${ORDERS_IMPL:-java}/Dockerfile
+    image: bootcamp/orders-${ORDERS_IMPL:-java}
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgres://store:store@orders-db:5432/orders
+
+      # Nothing here is a hostname anyone configured. `catalog` and `payments` are
+      # service names from this file, resolved by the platform's DNS. Kubernetes
+      # services or a mesh do the same later, with no code change — which is the
+      # whole reason no address is ever hard-coded in the source.
+      CATALOG_URL: http://catalog:8000
+      PAYMENTS_ADDR: payments:50051
+
+      # Policy, not guesswork. 2000 ms is a statement about how long a checkout may
+      # wait on a charge, decided by the people who own checkout.
+      #
+      # The default value of a missing timeout is FOREVER, which is the worst
+      # possible value. These four lines are what Session 3 builds.
+      CATALOG_TIMEOUT_MS: 1000
+      PAYMENTS_TIMEOUT_MS: 2000
+      PAYMENTS_RETRY_MAX: 2
+      BREAKER_FAILURE_THRESHOLD: 5
+      BREAKER_RESET_MS: 10000
+    ports:
+      - "8080:8080"
+    depends_on:
+      orders-db:
+        condition: service_healthy
+      # NOTE what is deliberately absent: catalog and payments.
+      #
+      # It is tempting to add `payments: {condition: service_healthy}` here so that
+      # everything starts in a tidy order. Do not. It would mean orders cannot start
+      # while payments is unwell — turning a payments outage into an orders outage
+      # at deploy time, which is precisely the failure this session is about.
+      #
+      # A service must be able to start, pass its health check and serve the requests
+      # it can serve while its dependencies are broken. Startup order is not a
+      # substitute for handling failure at runtime.
+    healthcheck:
+      # Liveness only, and it must keep returning 200 while payments is down. Orders
+      # is not sick then; it is degraded, and that belongs in metrics, not here.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || curl -fsS http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
