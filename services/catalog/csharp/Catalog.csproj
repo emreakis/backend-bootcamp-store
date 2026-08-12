@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Catalog</RootNamespace>
+    <AssemblyName>Catalog</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Compare this file with services/orders/csharp/Orders.csproj.
+
+       No Grpc.Net.Client, no Google.Protobuf, no Grpc.Tools, and no <Protobuf> item
+       running a code generator during compilation. One package, because a service that
+       only reads and is only called over HTTP needs nothing else.
+
+       The difference in these two project files is a fair summary of the difference in
+       the two services. -->
+  <ItemGroup>
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+  </ItemGroup>
+
+</Project>

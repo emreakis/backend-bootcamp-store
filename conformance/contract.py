@@ -168,6 +168,22 @@ def check_catalog(base: str) -> None:
     status, payload, headers = request(base, "GET", "/v1/products/NOPE-000")
     problem("get missing", status, payload, headers, 404, "product-not-found")
 
+    # The check that caught the Python implementation lying about its own contract.
+    #
+    # `limit` is declared 1..100, and the spec says an out-of-range one is a 400 in the
+    # usual envelope. FastAPI's default was a 422 carrying pydantic's error structure —
+    # neither the status nor the shape the contract promises.
+    #
+    # This is the most common way an implementation drifts from its spec: not by getting
+    # an endpoint wrong, but by letting the framework answer on a path nobody wrote by
+    # hand. Every one of the six has a different default here, which is precisely why it
+    # has to be asserted rather than assumed.
+    for name, query in (("limit too small", "limit=0"),
+                        ("limit too large", "limit=101"),
+                        ("limit not a number", "limit=abc")):
+        status, payload, headers = request(base, "GET", f"/v1/products?{query}")
+        problem(name, status, payload, headers, 400, "validation-failed")
+
 
 # ---------------------------------------------------------------------------
 #  orders — the orchestrator, and where everything interesting happens

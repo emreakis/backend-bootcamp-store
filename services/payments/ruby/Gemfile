@@ -1,0 +1,13 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+ruby '>= 3.2'
+
+# No sinatra, no puma, no rackup, no pg.
+#
+# Compare with services/catalog/ruby/Gemfile. This service has no HTTP surface and no
+# database, so it needs a gRPC server and nothing else — which is a fair summary of the
+# difference between the two services.
+gem 'grpc', '~> 1.71'
+gem 'grpc-tools', '~> 1.71'

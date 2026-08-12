@@ -1,0 +1,16 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+ruby '>= 3.2'
+
+gem 'puma', '~> 6.5'
+gem 'rackup', '~> 2.2'
+gem 'sinatra', '~> 4.1'
+
+# Raw SQL, not an ORM: every implementation in this repo writes raw SQL, so the six can
+# be read side by side without also teaching six ORMs.
+gem 'pg', '~> 1.5'
+
+# Compare with services/orders/ruby/Gemfile, which also carries grpc and grpc-tools.
+# A service that only reads and is only called over HTTP needs neither.

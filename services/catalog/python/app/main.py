@@ -13,6 +13,7 @@ one database inside a transaction that lives in another.
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
@@ -124,6 +125,23 @@ def get_product(sku: str, request: Request):
                        f"No product with sku '{sku}'.", request.url.path)
 
     return Product(sku=row[0], name=row[1], price_cents=row[2], stock=row[3])
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_query(request: Request, exc: RequestValidationError):
+    """`limit` outside 1..100, or not a number at all.
+
+    FastAPI's default here is a 422 carrying pydantic's own error structure — two
+    things the contract does not have. A framework's default is a framework's opinion;
+    contracts/catalog.v1.yaml is the agreement, and it says 400 in this envelope.
+
+    Worth knowing that this is the single most common way an implementation drifts
+    from its spec: not by getting an endpoint wrong, but by letting the framework
+    answer for it on a path nobody wrote by hand. The conformance suite checks it for
+    exactly that reason.
+    """
+    return problem(400, "validation-failed", "Validation failed",
+                   "limit must be an integer between 1 and 100.", request.url.path)
 
 
 @app.exception_handler(Exception)

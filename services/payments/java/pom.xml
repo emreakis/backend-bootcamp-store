@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.backendguru</groupId>
+    <artifactId>payments-service</artifactId>
+    <version>1.0.0</version>
+    <name>payments-service</name>
+    <description>gRPC only, no HTTP, no database</description>
+
+    <!-- No Spring Boot parent, and that is worth noticing.
+
+         This service has no HTTP surface, no web framework, no dependency injection
+         and no configuration binding. It is a `main` that starts a gRPC server. The
+         other Java services in this repo are Spring applications because they serve
+         REST and talk to a database; this one would be carrying a framework for the
+         sake of carrying one. -->
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <grpc.version>1.73.0</grpc.version>
+        <!-- MUST match the protobuf-java runtime that grpc-protobuf pulls in — check
+             with `mvn dependency:tree` before changing either number.
+
+             Generated code and its runtime library are one unit. protoc emits calls
+             into protobuf-java, and a newer protoc emits calls a newer runtime is
+             required to have: build this with protoc 4.31 against grpc 1.73, which
+             ships protobuf-java 3.25.5, and you get
+
+                 cannot find symbol: method resolveAllFeaturesImmutable()
+
+             at compile time — a version skew masquerading as a missing method. -->
+        <protobuf.version>3.25.5</protobuf.version>
+
+        <!-- Where the contract lives. Overridden in the Dockerfile with
+             -Dproto.dir=/contracts/proto, because the build context there is flat. -->
+        <proto.dir>${project.basedir}/../../../contracts/proto</proto.dir>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-netty-shaded</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+        <!-- The standard health service and reflection, as libraries rather than
+             something each server writes. Same protocol in every language. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-services</artifactId>
+            <version>${grpc.version}</version>
+        </dependency>
+
+        <!-- The gRPC code generator emits @javax.annotation.Generated, which left the
+             JDK in Java 9. Compile-time only. -->
+        <dependency>
+            <groupId>org.apache.tomcat</groupId>
+            <artifactId>annotations-api</artifactId>
+            <version>6.0.53</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>payments</finalName>
+        <extensions>
+            <!-- Detects the host OS and CPU, so the right prebuilt protoc binary is
+                 downloaded from Maven Central. This is why nothing has to be installed
+                 for the Java build to generate code, unlike the Go and Node images. -->
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
+        <plugins>
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>0.6.1</version>
+                <configuration>
+                    <protoSourceRoot>${proto.dir}</protoSourceRoot>
+                    <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+                    <pluginId>grpc-java</pluginId>
+                    <pluginArtifact>io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}</pluginArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <!-- compile produces the messages; compile-custom runs the
+                                 grpc-java plugin and produces the service base class
+                                 this server extends. -->
+                            <goal>compile</goal>
+                            <goal>compile-custom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>io.backendguru.store.payments.PaymentsServer</mainClass>
+                                </transformer>
+                                <!-- grpc-netty-shaded ships META-INF/services entries
+                                     that must be merged rather than overwritten, or the
+                                     transport disappears from the fat jar and the
+                                     server fails at startup with a very unhelpful
+                                     message about no available transport. -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
