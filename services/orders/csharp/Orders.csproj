@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Orders</RootNamespace>
+    <AssemblyName>Orders</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Where the contract lives, relative to this file. The Dockerfile overrides it
+         with -p:ProtoDir=/contracts/proto, because the build context is the repo root
+         and the layout inside the image is not the layout on your laptop. -->
+    <ProtoDir>$(MSBuildProjectDirectory)/../../../contracts/proto</ProtoDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Raw ADO.NET, not Entity Framework: every implementation in this repo writes raw
+         SQL, so the six can be read side by side without also teaching six ORMs. -->
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+
+    <PackageReference Include="Grpc.Net.Client" Version="2.67.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.29.3" />
+    <!-- Grpc.Tools is a build-time-only package: PrivateAssets="All" keeps it out of
+         the published output. It is the thing that actually runs protoc. -->
+    <PackageReference Include="Grpc.Tools" Version="2.67.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NOTHING EXISTS UNTIL THE CONTRACT DOES.
+
+         This one line makes the contract a build input. Grpc.Tools ships protoc and
+         the C# gRPC plugin as prebuilt binaries for the host platform, runs them
+         during compilation, and feeds the generated .cs straight to the compiler — so
+         nothing lands in git and nothing can drift.
+
+         GrpcServices="Client" generates the stub and NOT the service base class. This
+         process consumes payments; it does not implement it, and generating a server
+         it will never use would be an invitation for somebody to.
+
+         ProtoRoot is what makes the generated namespace come out right: protoc derives
+         names from the path relative to the include root, which is why the .proto
+         lives three directories deep in contracts/proto. -->
+    <Protobuf Include="$(ProtoDir)/bootcamp/payments/v1/payments.proto"
+              ProtoRoot="$(ProtoDir)"
+              GrpcServices="Client" />
+  </ItemGroup>
+
+</Project>

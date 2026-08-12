@@ -1,0 +1,19 @@
+# frozen_string_literal: true
+
+source 'https://rubygems.org'
+
+ruby '>= 3.2'
+
+gem 'puma', '~> 6.5'
+gem 'rackup', '~> 2.2'
+gem 'sinatra', '~> 4.1'
+
+# Raw SQL, not an ORM: every implementation in this repo writes raw SQL, so the six can
+# be read side by side without also teaching six ORMs.
+gem 'pg', '~> 1.5'
+
+# grpc is the runtime; grpc-tools ships protoc and the Ruby plugin, and is needed only
+# at build time. It stays in the bundle here because the Dockerfile runs the generator
+# in the same image it runs the app in — see the note there about what that costs.
+gem 'grpc', '~> 1.71'
+gem 'grpc-tools', '~> 1.71'
