@@ -37,8 +37,22 @@ components:
             switch on: it is stable, machine-readable, and unlike `status` it is
             specific enough to act on.
 
-            Being a URL, it can also be fetched — point it at documentation your
-            on-call engineer can read at 3am.
+            **It is an identifier first and a URL second.** The ones in this repo do
+            not resolve, and that is allowed: `bootcamp.backendguru.io` is a namespace
+            we control the shape of, not a website. RFC 9457 is explicit that a client
+            must not fetch this automatically — one that resolved every error type
+            would add an outbound request to every failure, which is how a bad minute
+            becomes a bad afternoon.
+
+            What the URI buys is uniqueness and stability. Two teams inventing
+            `payment-declined` in the same week cannot collide, and the string survives
+            the documentation behind it being moved, rewritten or deleted. So **never
+            change one once it has shipped**: clients branch on it, which makes a
+            renamed `type` a breaking change that no status code will reveal and no
+            test you own will catch.
+
+            In production, do make it dereference. A page your on-call engineer can
+            read at 3am is the whole reason this field is a URI and not an enum.
           default: about:blank
           examples:
             - https://bootcamp.backendguru.io/problems/payment-declined
