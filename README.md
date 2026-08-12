@@ -176,16 +176,22 @@ services/           Session 3 — the same store as three services, six language
 conformance/        contract.py and resilience.py — language-neutral, stdlib only
                     slides.py — the decks, checked against the code they describe
 exercises/          the in-session exercises
+slides/             the three decks, as presented
+diagrams/           their Excalidraw sources — open one, change it, export your own
 tools/smoke.py      language-neutral contract check for the monolith
 ```
 
 ## Sessions
 
-| # | Title | Exercise |
-|---|-------|----------|
-| 1 | Distributed architectures | [Split this monolith](exercises/session-1-split-the-monolith.md) |
-| 2 | API design | [Design the contract](exercises/session-2-design-the-contract.md), then diff it against [ours](contracts) |
-| 3 | Building microservices | [Break it, then fix it properly](exercises/session-3-break-it-and-fix-it.md) |
+| # | Title | Slides | Exercise |
+|---|-------|--------|----------|
+| 1 | Distributed architectures | [deck](slides/session-1-distributed-architectures.pdf) | [Split this monolith](exercises/session-1-split-the-monolith.md) |
+| 2 | API design | [deck](slides/session-2-api-design.pdf) | [Design the contract](exercises/session-2-design-the-contract.md), then diff it against [ours](contracts) |
+| 3 | Building microservices | [deck](slides/session-3-building-microservices.pdf) | [Break it, then fix it properly](exercises/session-3-break-it-and-fix-it.md) |
+
+The decks were written before the code was. **Where a slide and this repository disagree,
+the repository is right** — see [`slides/README.md`](slides/README.md) for the specifics
+and for the script that lists them.
 
 Session 3 needs Docker. Please install it before Saturday and run the command above
 once, so a slow first `docker pull` does not cost you the exercise.
