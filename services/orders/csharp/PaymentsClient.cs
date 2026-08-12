@@ -11,18 +11,30 @@ namespace Orders;
 /// store down with it if you let it. Everything inside <c>ChargeAsync</c> is the shape
 /// of a remote call that has not yet been made safe.</para>
 ///
-/// <para>Try it. Both of these hang, and neither of them should:</para>
+/// <para>Try it. All three of these break payments, and they do not break it the same
+/// way:</para>
 /// <code>
-///   docker compose stop payments                              # payments is DOWN
-///   PAYMENT_LATENCY_MS=30000 docker compose up -d payments    # payments is SLOW
+///   PAYMENT_LATENCY_MS=30000 docker compose up -d payments   # SLOW
+///   docker compose pause payments                            # BLACK HOLE
+///   docker compose stop payments                             # DOWN
 /// </code>
 ///
-/// <para>The first one surprises people. Surely a stopped server refuses connections
-/// and the call fails at once? Not on a container network: nothing is listening, the
-/// SYN packets are dropped rather than refused, and the connection attempt waits for a
-/// TCP timeout measured in minutes. "Down" and "slow" are the same thing to a caller
-/// with no deadline — which is why the deadline, not the outage, is the thing to
-/// fix.</para>
+/// <para>The first two hang, in every language, every time. A slow server accepts your
+/// connection and then never answers; a <em>paused</em> one keeps its address and takes
+/// your SYN packets without acknowledging them, which is what a crashed host or a
+/// network partition looks like from the outside.</para>
+///
+/// <para>The third is the one that surprises people, because it is not one behaviour. A
+/// stopped container loses its address and its DNS entry, and how long the failure
+/// takes is decided by whichever gRPC library you happen to be using. Measured on this
+/// stack, with no deadline anywhere: this one — C#, on HttpClient — gives up in about
+/// 4 seconds; Python, Go and Ruby take about 20 (their own connect timeout); Java and
+/// TypeScript were still waiting after 25.</para>
+///
+/// <para>Same outage, same contract, four seconds to never. <b>That</b> is the argument
+/// for the deadline: without one, how long checkout hangs is a property of somebody
+/// else's default rather than a number you chose — and 20 seconds is not "fast" for a
+/// checkout, it is a hang with extra steps.</para>
 ///
 /// <para>Meanwhile <c>GET /health</c> on this service keeps answering 200, because
 /// orders is not sick. Its dependency is. Watching a completely healthy service become

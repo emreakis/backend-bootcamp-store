@@ -58,22 +58,39 @@ contract and not yet in this deployment".
 
 ## Making it fail, on demand
 
+Three ways, and they are not the same failure:
+
 ```bash
-docker compose stop payments                             # DOWN
-docker compose start payments                            # back
-PAYMENT_LATENCY_MS=30000 docker compose up -d payments   # SLOW
+PAYMENT_LATENCY_MS=30000 docker compose up -d payments   # SLOW: accepts, then holds
+docker compose pause payments                            # BLACK HOLE: packets vanish
+docker compose stop payments                             # DOWN: it depends
+docker compose unpause payments && docker compose start payments   # back
 ```
 
-Both of these hang a caller that has no deadline, and the first one is the surprise.
-It is tempting to assume a stopped server refuses connections and the call fails at
-once. On a container network it does not: nothing is listening, so the SYN packets are
-dropped rather than refused, and the connect waits out a TCP timeout measured in
-minutes.
+The first two hang a caller that has no deadline, in every language, every time. A slow
+server accepts your connection and then never answers; a **paused** container keeps its
+address and takes your SYN packets without acknowledging them, which is what a crashed
+host or a network partition looks like from the outside.
 
-Which is the actual lesson. **To a caller with no deadline, "down" and "slow" are the
-same thing** — so the deadline, not the outage, is what you fix first. Only after that
-does the difference between them start to matter, and that is where retries and a
-breaker come in.
+The third is the one that surprises people, because it is not one behaviour. A stopped
+container loses its address and its DNS entry, so the failure arrives through a
+different path — and how long it takes is decided by whichever gRPC library the caller
+happens to be using. Measured against the six orders implementations, with no deadline
+anywhere:
+
+| orders | how long a stopped payments takes to fail |
+|---|---|
+| C# | ~4 s |
+| Python, Go, Ruby | ~20 s — the gRPC library's own connect timeout |
+| Java, TypeScript | still waiting after 25 s |
+
+Same outage, same contract, four seconds to never. **That is the argument for the
+deadline**: without one, how long a checkout hangs is a property of somebody else's
+library default rather than a number anybody chose. Twenty seconds is not "fast" for a
+checkout either — it is a hang with extra steps.
+
+Fix the deadline first and all six agree. Only then does the difference between "down"
+and "slow" start to matter, and that is where retries and a breaker come in.
 
 `Charge` waits on the injected latency *and* on the caller's context at the same time,
 so when the caller's deadline expires the server stops working immediately and logs
