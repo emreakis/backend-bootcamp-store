@@ -50,6 +50,10 @@ services conformance suite. Notice the absence. It cost something.
 
 ## What breaks — the Session 3 exercise
 
+> The timed, step-by-step version is
+> [`exercises/session-3-break-it-and-fix-it.md`](../exercises/session-3-break-it-and-fix-it.md).
+> What follows is the same material as prose.
+
 The thing that *does* go wrong here is availability, and it goes wrong quietly. Three
 ways to break payments, and they are not the same failure:
 

@@ -177,8 +177,8 @@ tools/smoke.py      language-neutral contract check for the monolith
 | # | Title | Exercise |
 |---|-------|----------|
 | 1 | Distributed architectures | [Split this monolith](exercises/session-1-split-the-monolith.md) |
-| 2 | API design | Review the [contracts](contracts) before the code that satisfies them exists |
-| 3 | Building microservices | Break the system with `conformance/resilience.py`, then fix it |
+| 2 | API design | [Design the contract](exercises/session-2-design-the-contract.md), then diff it against [ours](contracts) |
+| 3 | Building microservices | [Break it, then fix it properly](exercises/session-3-break-it-and-fix-it.md) |
 
 Session 3 needs Docker. Please install it before Saturday and run the command above
 once, so a slow first `docker pull` does not cost you the exercise.
