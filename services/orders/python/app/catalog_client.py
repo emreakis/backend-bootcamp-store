@@ -15,36 +15,31 @@ from .models import ProductSnapshot
 log = logging.getLogger("orders.catalog")
 
 # ============================================================================
-# TODO (exercise 3.4) — GIVE THIS CLIENT A TIMEOUT.
+# EXERCISE 3.4 — the timeout.
 #
-# Read the `timeout=None` below carefully, because Python is the odd one out here.
+# httpx.Timeout takes separate connect/read/write/pool values, and the split is the
+# useful part: `connect` is "I cannot reach this host", `read` is "this host accepted
+# my connection and then went quiet". Different failures, different causes, and only
+# the second one is what `docker compose pause catalog` produces.
 #
-# httpx is one of very few HTTP clients that ships a sensible default — 5 seconds,
-# connect and read. It has been switched OFF on purpose, and for two reasons.
+# A single float sets all four, which is enough for a teaching system. In a real
+# service they usually differ: connect is fast and unforgiving, read is generous enough
+# for the slowest legitimate response.
 #
-#   1. So this exercise matches the other five languages. Java's RestClient, Go's
-#      bare http.Client, Node's fetch and Ruby's Net::HTTP all wait forever out of
-#      the box. `requests`, the library most Python developers actually reach for,
-#      also defaults to None. httpx is the exception, not the rule.
+# Note what this replaced: `timeout=None`, not httpx's 5-second default. That default
+# was switched off on `main` on purpose, because five seconds is httpx's opinion about
+# a reasonable wait and CATALOG_TIMEOUT_MS is *your* statement about how long a
+# checkout may spend pricing a line. They happen to share units. They are not the same
+# number, and inheriting one when you meant the other is how a service ends up with a
+# latency budget nobody chose.
 #
-#   2. Because a library default is not a policy. Five seconds is httpx's opinion
-#      about a reasonable wait; CATALOG_TIMEOUT_MS is *your* statement about how
-#      long a checkout may spend pricing a line. Those are different numbers that
-#      happen to share units, and inheriting one when you meant the other is how a
-#      service ends up with a timeout budget nobody chose.
-#
-# So: build the client with an explicit timeout from config.CATALOG_TIMEOUT_MS.
-# httpx.Timeout takes separate connect/read/write/pool values; a single float sets
-# them all, which is fine here.
-#
-#     timeout=httpx.Timeout(config.CATALOG_TIMEOUT_MS / 1000)
-#
-# Then prove it: `docker compose pause catalog` and post an order. Before the fix the
-# request hangs; after it, you get a 503 in one second. `pause` rather than `stop`,
-# because a stopped container refuses connections instantly and a paused one leaves
-# you hanging — which is the whole point.
+# Prove it: `docker compose pause catalog` and post an order. Before this change the
+# request hung; now it is a 503 in one second.
 # ============================================================================
-_http = httpx.Client(base_url=config.CATALOG_URL, timeout=None)
+_http = httpx.Client(
+    base_url=config.CATALOG_URL,
+    timeout=httpx.Timeout(config.CATALOG_TIMEOUT_MS / 1000.0),
+)
 
 
 def fetch(sku: str) -> ProductSnapshot:

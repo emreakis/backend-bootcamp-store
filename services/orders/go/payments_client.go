@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -13,64 +15,49 @@ import (
 	paymentsv1 "github.com/backendguru/store/gen/paymentsv1"
 )
 
-// paymentsClient is THE FILE THE SESSION 3 EXERCISE LIVES IN.
+// SOLUTION — exercises 3.1, 3.2 and 3.3.
 //
-// The gRPC half of this service's dependencies, and the one that will take the store
-// down with it if you let it. Everything inside charge() is the shape of a remote call
-// that has not yet been made safe.
+// Compare with the same file on main:
 //
-// Try it. Both of these hang, and neither of them should:
+//	git diff main solution -- services/orders/go
 //
-//	docker compose stop payments                              # payments is DOWN
-//	PAYMENT_LATENCY_MS=30000 docker compose up -d payments    # payments is SLOW
+// Three things arrived, in the order they matter. A deadline, so a slow payments service
+// cannot hold a checkout open forever. A bounded retry, legal only because Charge carries
+// an idempotency key. And a breaker, so that once payments is clearly unwell we stop
+// asking — which fails fast for us and takes load off it.
 //
-// The first one surprises people. Surely a stopped server refuses connections and the
-// call fails at once? Not on a container network: nothing is listening, the SYN
-// packets are dropped rather than refused, and the connection attempt waits for a TCP
-// timeout measured in minutes. "Down" and "slow" are the same thing to a caller with
-// no deadline — which is why the deadline, not the outage, is the thing to fix.
-//
-// Meanwhile GET /health on this service keeps answering 200, because orders is not
-// sick. Its dependency is. Watching a completely healthy service become unusable
-// anyway is the moment Session 3 exists for, and it is the fallacy from Session 1 —
-// *the network is reliable* — collecting its debt.
+// The first of those is worth more than the other two together. Delete the retry and the
+// breaker and this service still degrades honestly; delete the deadline and nothing else
+// here can save it.
 type paymentsClient struct {
-	conn *grpc.ClientConn
-	stub paymentsv1.PaymentsClient
-	cfg  config
+	conn    *grpc.ClientConn
+	stub    paymentsv1.PaymentsClient
+	cfg     config
+	breaker *circuitBreaker
 }
 
+// backoff between attempts. Never zero — an instant retry is just a second failure.
+var backoff = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, 800 * time.Millisecond}
+
 func newPaymentsClient(cfg config) (*paymentsClient, error) {
-	// The channel is built once and reused for the life of the process.
-	//
-	// It is not a connection. It is a managed thing that resolves the name, opens
-	// connections as needed, multiplexes concurrent calls over HTTP/2 and reconnects
-	// on its own after a failure. Building one per request is both slow and a
-	// misunderstanding of what it is.
-	//
-	// grpc.NewClient does NOT dial here — it is lazy, and the first RPC is what
-	// actually connects. That is worth knowing during this exercise: a client that
-	// constructs successfully tells you nothing at all about whether payments exists.
-	//
-	// `payments` is not a hostname anybody configured — it is a service name the
-	// platform resolves. Insecure credentials because this hop is inside the cluster;
-	// in production a service that moves money gets mTLS.
 	conn, err := grpc.NewClient(cfg.paymentsAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("payments client -> %s (timeout %s, retries %d)",
-		cfg.paymentsAddr, cfg.paymentsTimeout, cfg.paymentsRetryMax)
-	return &paymentsClient{conn: conn, stub: paymentsv1.NewPaymentsClient(conn), cfg: cfg}, nil
+	log.Printf("payments client -> %s (timeout %s, retries %d, breaker %d/%s)",
+		cfg.paymentsAddr, cfg.paymentsTimeout, cfg.paymentsRetryMax,
+		cfg.breakerThreshold, cfg.breakerReset)
+
+	return &paymentsClient{
+		conn:    conn,
+		stub:    paymentsv1.NewPaymentsClient(conn),
+		cfg:     cfg,
+		breaker: &circuitBreaker{threshold: cfg.breakerThreshold, reset: cfg.breakerReset},
+	}, nil
 }
 
-// charge the card.
-//
-// idempotencyKey is what makes this call safe to repeat, and is therefore the
-// precondition for exercise 3.2. Retrying a charge without one bills the customer
-// twice.
 func (p *paymentsClient) charge(orderID string, amountCents int64, idempotencyKey string) (*payment, error) {
 	request := &paymentsv1.ChargeRequest{
 		OrderId:        orderID,
@@ -79,120 +66,160 @@ func (p *paymentsClient) charge(orderID string, amountCents int64, idempotencyKe
 		IdempotencyKey: idempotencyKey,
 	}
 
-	// ================================================================
-	// TODO (exercise 3.1) — GIVE THIS CALL A DEADLINE.       [do this first]
+	// EXERCISE 3.3 — the breaker, checked before anything else.
 	//
-	// context.Background() has no deadline, so this call waits forever. Not "a long
-	// time" — forever. The default value of a missing deadline is the worst value it
-	// could have, and it is the single most important line missing from this file.
-	//
-	// In Go the deadline is not a stub option, it is the context — which is the
-	// clearest expression of the idea in any of the six languages:
-	//
-	//     ctx, cancel := context.WithTimeout(context.Background(), p.cfg.paymentsTimeout)
-	//     defer cancel()
-	//
-	// Always `defer cancel()`, even on the success path. Skip it and the timer and
-	// its goroutine leak until the deadline fires, which `go vet` will tell you about
-	// and a production heap profile will tell you about more expensively.
-	//
-	// The deadline also travels: gRPC puts the remaining budget on the wire, payments
-	// sees it as its own ctx.Done(), and it abandons work nobody is listening for
-	// instead of finishing an answer into a closed connection. Watch the payments log
-	// say "ABANDONED: context canceled" the moment this expires.
-	//
-	// Verify: PAYMENT_LATENCY_MS=30000, then POST an order. Before, it hangs; after,
-	// you get a 503 in two seconds.
-	// ================================================================
-	ctx := context.Background()
+	// If payments has failed breakerThreshold times in a row we do not call it at all.
+	// That is not pessimism, it is arithmetic: the next call will almost certainly fail
+	// too, and it would cost us the full timeout per attempt to find out while adding
+	// load to a service that is already struggling.
+	if p.breaker.isOpen() {
+		log.Printf("order=%s charge SKIPPED: circuit breaker is open", orderID)
+		return nil, paymentsUnavailable(
+			"The payment service is not answering, so we stopped calling it. " +
+				"No charge was made.")
+	}
 
-	// ================================================================
-	// TODO (exercise 3.2) — RETRY, BUT ONLY BECAUSE YOU MAY.       [then this]
-	//
-	// Wrap the call in a bounded retry: at most p.cfg.paymentsRetryMax extra attempts,
-	// with backoff between them (say 50 ms, then 200 ms), and ONLY for
-	// codes.Unavailable and codes.DeadlineExceeded.
-	//
-	// Three rules, each of which someone learns the hard way:
-	//
-	//  1. Only retry what is safe to repeat. This call is, because ChargeRequest
-	//     carries an idempotency key and payments returns the original response for a
-	//     key it has seen. Delete that field and this exercise becomes a
-	//     double-billing bug.
-	//
-	//  2. Never retry a business outcome. A declined card will be declined again;
-	//     retrying it just costs the customer time.
-	//
-	//  3. Bound it, and back off. Retrying into an overloaded service is how a
-	//     brownout becomes an outage — you add load to the exact system that is
-	//     failing from load. Three attempts and a budget, not "retry until success".
-	//
-	// Note the interaction with 3.1: if the deadline is on the OUTER context, three
-	// attempts share one 2 s budget and the whole operation still answers in 2 s. Put
-	// it on each attempt instead and the worst case becomes 6 s. Both are defensible;
-	// only one of them is what you meant. Decide on purpose.
-	//
-	// (grpc-go also ships a declarative retry policy via a service config, which is
-	// worth knowing about and worth writing by hand once first.)
-	// ================================================================
+	var lastCode codes.Code
 
-	// ================================================================
-	// TODO (exercise 3.3) — PUT A CIRCUIT BREAKER IN FRONT.        [last]
+	// EXERCISE 3.2 — a BOUNDED retry.
 	//
-	// Count consecutive failures. At p.cfg.breakerThreshold, stop calling payments at
-	// all and fail immediately for p.cfg.breakerReset; then let one probe through and
-	// close on success.
+	// At most paymentsRetryMax extra attempts, and only for the two codes that mean "try
+	// again": Unavailable (nobody answered) and DeadlineExceeded (somebody answered too
+	// slowly). Never for a decline, which is not a failure, and never for
+	// InvalidArgument, which is our bug and will be our bug again next time.
 	//
-	// A breaker does two jobs, and the second is the one people forget:
-	//
-	//   - it turns a slow hang into an instant, designed failure, so orders stops
-	//     burning goroutines on a call it can predict will fail; and
-	//   - it takes load OFF payments, giving it room to recover. Without one, a
-	//     struggling service is held under by the traffic of everyone politely
-	//     waiting for it.
-	//
-	// Every HTTP handler runs in its own goroutine, so your counter is shared mutable
-	// state under concurrency. A sync.Mutex around the whole thing is fine and honest;
-	// sony/gobreaker does it properly. Writing the twenty lines yourself once is worth
-	// doing first, because then you know what it is doing.
-	// ================================================================
+	// This is only legal because ChargeRequest carries an idempotency key and payments
+	// returns the original response for a key it has seen. Take that away and this loop
+	// bills the customer up to three times.
+	for attempt := 0; attempt <= p.cfg.paymentsRetryMax; attempt++ {
+		// ================================================================
+		// EXERCISE 3.1 — THE DEADLINE. The most important lines in this file.
+		//
+		// In Go the deadline is the context, which is the clearest expression of the
+		// idea in any of the six languages: it is the first argument to every generated
+		// method, and it is impossible to make the call without passing something.
+		//
+		// `defer cancel()` inside the loop would not run until the function returns, so
+		// on three attempts you would hold three timers. Hence cancel() at the end of
+		// each iteration instead — the sort of thing `go vet` catches and a production
+		// heap profile catches more expensively.
+		//
+		// The deadline is PER ATTEMPT, which means the worst case is retries + 1
+		// attempts plus backoff: with the defaults, 3 x 2s + 250ms ~ 6.25s. State that
+		// number out loud, because whoever calls checkout has their own budget.
+		//
+		// The other defensible design is one context created outside the loop and shared
+		// by every attempt. That keeps the promise at 2s but means a slow dependency eats
+		// the whole budget on attempt one and the retries never happen — which is the
+		// honest lesson underneath: retries fix TRANSIENT failures, not slow ones.
+		// ================================================================
+		ctx, cancel := context.WithTimeout(context.Background(), p.cfg.paymentsTimeout)
+		response, err := p.stub.Charge(ctx, request)
+		cancel()
 
-	response, err := p.stub.Charge(ctx, request)
-	if err != nil {
+		if err == nil {
+			p.breaker.recordSuccess()
+
+			// A DECLINE IS NOT A FAILURE. The call succeeded; the answer was "no". It
+			// does not count against the breaker and it is never retried.
+			if response.GetStatus() == paymentsv1.ChargeStatus_CHARGE_STATUS_DECLINED {
+				log.Printf("order=%s charge DECLINED: %s", orderID, response.GetDeclineReason())
+				reason := response.GetDeclineReason()
+				if reason == "" {
+					reason = "The card was declined."
+				}
+				return nil, paymentDeclined(reason)
+			}
+
+			log.Printf("order=%s charge APPROVED auth=%s (attempt %d)",
+				orderID, response.GetAuthCode(), attempt+1)
+			return &payment{Status: "APPROVED", AuthCode: response.GetAuthCode()}, nil
+		}
+
 		code := status.Code(err)
-		log.Printf("order=%s charge failed at the transport: %s", orderID, code)
-
-		// Transport-level trouble. The customer did nothing wrong, so this is a 5xx
-		// and carries Retry-After. Crucially, NO CHARGE WAS MADE — or if one was, the
-		// idempotency key means the retry will find it rather than duplicate it.
-		if code == codes.Unavailable || code == codes.DeadlineExceeded {
-			return nil, paymentsUnavailable(fmt.Sprintf(
-				"The payment service did not respond within %d ms. No charge was made.",
-				p.cfg.paymentsTimeout.Milliseconds()))
+		if code != codes.Unavailable && code != codes.DeadlineExceeded {
+			// Not retryable, and not the breaker's business either: we sent something
+			// wrong and sending it again will not help.
+			return nil, fmt.Errorf("payments rejected the request: %s", code)
 		}
 
-		// Anything else — InvalidArgument, Unimplemented — means we sent something
-		// wrong, which is our bug and not a retry candidate.
-		return nil, fmt.Errorf("payments rejected the request: %s", code)
-	}
+		lastCode = code
+		p.breaker.recordFailure()
+		log.Printf("order=%s charge attempt %d/%d failed: %s",
+			orderID, attempt+1, p.cfg.paymentsRetryMax+1, code)
 
-	// A DECLINE IS NOT A FAILURE. The call succeeded; the answer was "no".
-	//
-	// Payments deliberately returns OK with status DECLINED rather than a gRPC error
-	// code, so that no retry policy in the system ever re-attempts a decision that
-	// will never change. Here that becomes a 402 — the customer's problem to solve,
-	// and not ours.
-	if response.GetStatus() == paymentsv1.ChargeStatus_CHARGE_STATUS_DECLINED {
-		log.Printf("order=%s charge DECLINED: %s", orderID, response.GetDeclineReason())
-		reason := response.GetDeclineReason()
-		if reason == "" {
-			reason = "The card was declined."
+		if attempt < p.cfg.paymentsRetryMax {
+			time.Sleep(backoff[min(attempt, len(backoff)-1)])
 		}
-		return nil, paymentDeclined(reason)
 	}
 
-	log.Printf("order=%s charge APPROVED auth=%s", orderID, response.GetAuthCode())
-	return &payment{Status: "APPROVED", AuthCode: response.GetAuthCode()}, nil
+	// Out of attempts. NO CHARGE WAS MADE — or if one was, the idempotency key means a
+	// later retry finds it rather than duplicating it. 503 with Retry-After, because the
+	// customer did nothing wrong.
+	return nil, paymentsUnavailable(fmt.Sprintf(
+		"The payment service did not respond (%s) after %d attempts of %d ms. "+
+			"No charge was made.",
+		lastCode, p.cfg.paymentsRetryMax+1, p.cfg.paymentsTimeout.Milliseconds()))
 }
 
 func (p *paymentsClient) close() { _ = p.conn.Close() }
+
+// --- the breaker -------------------------------------------------------------
+
+// circuitBreaker is closed, open, or half-open.
+//
+// Half-open is the state people forget, and leaving it out is worse than having no
+// breaker at all: a breaker that never closes again is a permanent outage you built
+// yourself. After `reset` this lets exactly one request through; if it succeeds the
+// breaker closes, and if it fails the clock restarts.
+//
+// The mutex is not decoration. Every HTTP handler runs in its own goroutine, so this
+// counter really is shared mutable state — and an unsynchronised one is a bug that only
+// shows up under load, which is the only time this code matters. (`go test -race` on the
+// checkout path is the cheapest way to prove that to yourself.)
+type circuitBreaker struct {
+	threshold int
+	reset     time.Duration
+
+	mu                  sync.Mutex
+	consecutiveFailures int
+	openedAt            time.Time
+}
+
+func (b *circuitBreaker) isOpen() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.openedAt.IsZero() {
+		return false // closed
+	}
+	if time.Since(b.openedAt) >= b.reset {
+		log.Print("circuit breaker HALF-OPEN: letting one probe through")
+		b.openedAt = time.Time{} // half-open
+		return false
+	}
+	return true // open
+}
+
+func (b *circuitBreaker) recordSuccess() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.consecutiveFailures > 0 {
+		log.Print("circuit breaker CLOSED after a success")
+	}
+	b.consecutiveFailures = 0
+	b.openedAt = time.Time{}
+}
+
+func (b *circuitBreaker) recordFailure() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.consecutiveFailures++
+	if b.consecutiveFailures >= b.threshold && b.openedAt.IsZero() {
+		b.openedAt = time.Now()
+		log.Printf("circuit breaker OPEN after %d consecutive failures; "+
+			"not calling payments for %s", b.consecutiveFailures, b.reset)
+	}
+}

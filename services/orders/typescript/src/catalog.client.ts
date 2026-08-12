@@ -35,32 +35,26 @@ export class CatalogClient {
     let response: Response;
     try {
       // ================================================================
-      // TODO (exercise 3.4) — GIVE THIS CALL A TIMEOUT.
-      //
-      // `fetch` has no timeout. Not a long one — none at all. Its patience is
-      // unbounded, and `config.catalogTimeoutMs` is read from the environment and
-      // then quietly ignored.
+      // EXERCISE 3.4 — the timeout.
       //
       // The web platform's answer is an AbortSignal, and modern Node gives you the
-      // one-liner:
-      //
-      //     await fetch(url, { signal: AbortSignal.timeout(config.catalogTimeoutMs) })
-      //
-      // When it fires, `fetch` rejects with a TimeoutError and the socket is closed —
-      // note that second half. An abort that only stops you *waiting* leaves the
-      // request in flight and the connection held, which is how a service with
+      // one-liner. When it fires, `fetch` rejects with a TimeoutError AND the socket is
+      // closed — note that second half. An abort that only stops you *waiting* leaves
+      // the request in flight and the connection held, which is how a service that has
       // timeouts still runs out of sockets.
       //
-      // Payments gets all the attention because it is the dramatic failure, but
-      // catalog sits on the same checkout path: a slow catalog occupies exactly the
-      // same event loop, and does it one step earlier.
+      // One number covers the whole round trip here, which is enough for a teaching
+      // system. `fetch` gives you no way to split connect from read; when you need
+      // that in Node you drop to undici's Agent and set connectTimeout and
+      // headersTimeout separately. Different failures with different causes, and only
+      // the second is what `docker compose pause catalog` produces.
       //
-      // Then prove it: `docker compose pause catalog` and post an order. Before the
-      // fix the request hangs; after it, you get a 503 in one second. `pause` rather
-      // than `stop`, because a stopped container refuses connections instantly and a
-      // paused one leaves you hanging — which is the whole point.
+      // Prove it: `docker compose pause catalog` and post an order. Before this change
+      // the request hung; now it is a 503 in one second.
       // ================================================================
-      response = await fetch(`${config.catalogUrl}/v1/products/${sku}`);
+      response = await fetch(`${config.catalogUrl}/v1/products/${sku}`, {
+        signal: AbortSignal.timeout(config.catalogTimeoutMs),
+      });
     } catch (unreachable) {
       // Connection refused, DNS failure, or an abort — the last of which is only
       // reachable once exercise 3.4 is done.

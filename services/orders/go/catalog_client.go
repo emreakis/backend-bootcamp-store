@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 )
 
@@ -19,32 +20,30 @@ type catalogClient struct {
 
 func newCatalogClient(cfg config) *catalogClient {
 	// ====================================================================
-	// TODO (exercise 3.4) — GIVE THIS CLIENT A TIMEOUT.
+	// EXERCISE 3.4 — the timeout.
 	//
-	// http.Client's zero value has no timeout. None. Its patience is unbounded, and
-	// cfg.catalogTimeout above is read from the environment and then quietly ignored.
+	// http.Client.Timeout covers the whole round trip: connect, redirects, and reading
+	// the body. One field, which is either a gift or a trap depending on whether you
+	// remember it exists — its zero value means forever.
 	//
-	// Go makes this one a single field, which is either a gift or a trap depending on
-	// whether you remember it exists:
+	// The Transport underneath splits it further, and the split is the useful part:
+	// DialContext's timeout is "I cannot reach this host", ResponseHeaderTimeout is
+	// "this host accepted my connection and then went quiet". Different failures with
+	// different causes, and only the second is what `docker compose pause catalog`
+	// produces. Both are set from the same environment variable here because one number
+	// is enough for a teaching system; in a real service the connect budget is usually
+	// much tighter than the read budget.
 	//
-	//     &http.Client{Timeout: cfg.catalogTimeout}
-	//
-	// That covers connect, redirects, reading the body — the whole round trip. For
-	// finer control (a short connect deadline, a longer read) you build a
-	// *http.Transport instead, and in a real service you probably should: the two
-	// failures are different, and a slow body is not the same problem as an
-	// unreachable host.
-	//
-	// Payments gets all the attention because it is the dramatic failure, but catalog
-	// sits on the same checkout path: a slow catalog blocks exactly the same
-	// goroutines, and does it one step earlier.
-	//
-	// Then prove it: `docker compose pause catalog` and post an order. Before the fix
-	// the request hangs; after it, you get a 503 in one second. `pause` rather than
-	// `stop`, because a stopped container refuses connections instantly and a paused
-	// one leaves you hanging — which is the whole point.
+	// Prove it: `docker compose pause catalog` and post an order. Before this change
+	// the request hung; now it is a 503 in one second.
 	// ====================================================================
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: cfg.catalogTimeout,
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: cfg.catalogTimeout}).DialContext,
+			ResponseHeaderTimeout: cfg.catalogTimeout,
+		},
+	}
 
 	log.Printf("catalog client -> %s (timeout %s)", cfg.catalogURL, cfg.catalogTimeout)
 	return &catalogClient{baseURL: cfg.catalogURL, http: client}

@@ -62,41 +62,28 @@ module CatalogClient
     client = Net::HTTP.new(BASE.host, BASE.port)
 
     # ====================================================================
-    # TODO (exercise 3.4) — GIVE THIS CLIENT A TIMEOUT.
-    #
-    # Read the two `nil`s below carefully, because Ruby is one of three languages in
-    # this repo that ships a default here at all.
-    #
-    # Net::HTTP defaults to 60 seconds for both open and read. They have been switched
-    # OFF on purpose, and for two reasons.
-    #
-    #   1. So this exercise matches the languages that genuinely wait forever — Java's
-    #      RestClient, Go's bare http.Client, Node's fetch. Sixty seconds in a classroom
-    #      is indistinguishable from forever anyway.
-    #
-    #   2. Because a library default is not a policy. Sixty seconds is Ruby's opinion
-    #      about a reasonable wait for an arbitrary HTTP call; CATALOG_TIMEOUT_MS is
-    #      *your* statement about how long a checkout may spend pricing a line. Those
-    #      are different numbers that happen to share units, and inheriting one when you
-    #      meant the other is how a service ends up with a latency budget nobody chose.
-    #
-    # So: set both from Config::CATALOG_TIMEOUT_MS, in SECONDS.
-    #
-    #     client.open_timeout = Config::CATALOG_TIMEOUT_MS / 1000.0
-    #     client.read_timeout = Config::CATALOG_TIMEOUT_MS / 1000.0
+    # EXERCISE 3.4 — the timeout.
     #
     # Two settings, not one, and the split is the useful part: `open` is "I cannot reach
     # this host" and `read` is "this host accepted my connection and then went quiet".
-    # They are different failures with different causes, and Ruby is one of the few
-    # standard libraries that makes you name both.
+    # Different failures with different causes, and only the second is what
+    # `docker compose pause catalog` produces. Ruby is one of the few standard libraries
+    # that makes you name both, which is a kindness disguised as extra work.
     #
-    # Then prove it: `docker compose pause catalog` and post an order. Before the fix the
-    # request hangs; after it, you get a 503 in one second. `pause` rather than `stop`,
-    # because a stopped container refuses connections instantly and a paused one leaves
-    # you hanging — which is the whole point.
+    # Both come from the same environment variable here because one number is enough for
+    # a teaching system. In a real service they differ: open is fast and unforgiving,
+    # read is generous enough for the slowest legitimate response.
+    #
+    # Note what this replaced: two explicit `nil`s, not Ruby's 60-second defaults. Those
+    # were switched off on `main` on purpose, because sixty seconds is Ruby's opinion
+    # about a reasonable wait and CATALOG_TIMEOUT_MS is *your* statement about how long
+    # a checkout may spend pricing a line.
+    #
+    # Prove it: `docker compose pause catalog` and post an order. Before this change the
+    # request hung; now it is a 503 in one second.
     # ====================================================================
-    client.open_timeout = nil
-    client.read_timeout = nil
+    client.open_timeout = Config::CATALOG_TIMEOUT_MS / 1000.0
+    client.read_timeout = Config::CATALOG_TIMEOUT_MS / 1000.0
 
     client.start
     client

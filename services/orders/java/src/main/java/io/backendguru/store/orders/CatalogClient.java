@@ -1,8 +1,12 @@
 package io.backendguru.store.orders;
 
+import java.time.Duration;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
+import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -45,32 +49,27 @@ public class CatalogClient {
         this.timeoutMs = timeoutMs;
 
         // ====================================================================
-        // TODO (exercise 3.4) — GIVE THIS CLIENT A TIMEOUT.
+        // EXERCISE 3.4 — the timeout.
         //
-        // As written, this RestClient has no connect timeout and no read timeout.
-        // Its patience is unbounded, and `timeoutMs` above is read from the
-        // environment and then quietly ignored.
+        // Two of them, and the split is the useful part. `connect` is "I cannot reach
+        // this host"; `read` is "this host accepted my connection and then went quiet".
+        // Different failures, different causes, and only the second one is what
+        // `docker compose pause catalog` produces.
         //
-        // Payments gets all the attention because it is the dramatic failure, but
-        // catalog sits on the same checkout path: a slow catalog blocks exactly the
-        // same threads, and does it one step earlier.
+        // Both are set from the same environment variable here because one number is
+        // enough for a teaching system. In a real service they usually differ: connect
+        // is fast and unforgiving, read is generous enough for the slowest legitimate
+        // response.
         //
-        // Give the builder below a request factory carrying both timeouts. In
-        // Spring 6 that is roughly:
-        //
-        //     var settings = ClientHttpRequestFactorySettings.defaults()
-        //             .withConnectTimeout(Duration.ofMillis(timeoutMs))
-        //             .withReadTimeout(Duration.ofMillis(timeoutMs));
-        //     builder.requestFactory(ClientHttpRequestFactoryBuilder.detect().build(settings))
-        //
-        // Keep using the INJECTED builder when you do — see the constructor note.
-        //
-        // Then prove it: `docker compose pause catalog` and post an order. Before the
-        // fix the request hangs forever; after it, you get a 503 in one second.
-        // `pause` rather than `stop`, because a stopped container refuses connections
-        // instantly and a paused one leaves you hanging — which is the whole point.
+        // Prove it: `docker compose pause catalog` and post an order. Before this
+        // change the request hung; now it is a 503 in one second.
         // ====================================================================
+        ClientHttpRequestFactorySettings settings = ClientHttpRequestFactorySettings.defaults()
+                .withConnectTimeout(Duration.ofMillis(timeoutMs))
+                .withReadTimeout(Duration.ofMillis(timeoutMs));
+
         this.http = builder
+                .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(settings))
                 .baseUrl(baseUrl)
                 .build();
 

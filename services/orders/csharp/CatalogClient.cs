@@ -24,45 +24,39 @@ public class CatalogClient
         _log = log;
 
         // ====================================================================
-        // TODO (exercise 3.4) — GIVE THIS CLIENT A TIMEOUT.
+        // EXERCISE 3.4 — the timeout.
         //
-        // Read the InfiniteTimeSpan below carefully, because .NET is one of only two
-        // languages in this repo that ships a default here at all.
+        // Two of them, and the split is the useful part. SocketsHttpHandler.ConnectTimeout
+        // is "I cannot reach this host"; HttpClient.Timeout covers the whole operation,
+        // connect through last byte of the body. Different failures with different
+        // causes, and only the second is what `docker compose pause catalog` produces.
         //
-        // HttpClient.Timeout defaults to 100 seconds. It has been switched OFF on
-        // purpose, and for two reasons.
+        // Both come from the same environment variable here because one number is enough
+        // for a teaching system. In a real service they differ: connect is fast and
+        // unforgiving, the overall budget is generous enough for the slowest legitimate
+        // response.
         //
-        //   1. So this exercise matches the other five languages. Java's RestClient,
-        //      Go's bare http.Client and Ruby's Net::HTTP all wait forever out of the
-        //      box, and a hundred seconds in a classroom is indistinguishable from
-        //      forever anyway.
+        // Note what this replaced: Timeout.InfiniteTimeSpan, not .NET's 100-second
+        // default. That default was switched off on `main` on purpose, because a hundred
+        // seconds is Microsoft's opinion about a reasonable wait and CATALOG_TIMEOUT_MS
+        // is *your* statement about how long a checkout may spend pricing a line.
         //
-        //   2. Because a library default is not a policy. A hundred seconds is
-        //      Microsoft's opinion about a reasonable wait for an arbitrary HTTP call;
-        //      CATALOG_TIMEOUT_MS is *your* statement about how long a checkout may
-        //      spend pricing a line. Those are different numbers that happen to share
-        //      units, and inheriting one when you meant the other is how a service ends
-        //      up with a latency budget nobody chose.
+        // And note the catch clause in FetchAsync: .NET reports a timeout as
+        // TaskCanceledException, not TimeoutException. Catch only HttpRequestException
+        // and this whole change silently does nothing but turn a hang into a 500.
         //
-        // So: set it from Config.CatalogTimeoutMs.
-        //
-        //     Timeout = TimeSpan.FromMilliseconds(Config.CatalogTimeoutMs)
-        //
-        // Note what HttpClient.Timeout actually covers: the whole operation, connect
-        // through last byte of the body, and it surfaces as a TaskCanceledException
-        // rather than a TimeoutException. For finer control there is
-        // SocketsHttpHandler.ConnectTimeout, and in a real service you probably want
-        // both — an unreachable host and a slow body are different problems.
-        //
-        // Then prove it: `docker compose pause catalog` and post an order. Before the
-        // fix the request hangs; after it, you get a 503 in one second. `pause` rather
-        // than `stop`, because a stopped container refuses connections instantly and a
-        // paused one leaves you hanging — which is the whole point.
+        // Prove it: `docker compose pause catalog` and post an order. Before this change
+        // the request hung; now it is a 503 in one second.
         // ====================================================================
-        _http = new HttpClient
+        var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromMilliseconds(Config.CatalogTimeoutMs),
+        };
+
+        _http = new HttpClient(handler)
         {
             BaseAddress = new Uri(Config.CatalogUrl),
-            Timeout = Timeout.InfiniteTimeSpan,
+            Timeout = TimeSpan.FromMilliseconds(Config.CatalogTimeoutMs),
         };
 
         _log.LogInformation("catalog client -> {Url} (timeout {Timeout} ms)",

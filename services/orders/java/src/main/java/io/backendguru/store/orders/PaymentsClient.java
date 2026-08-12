@@ -1,5 +1,7 @@
 package io.backendguru.store.orders;
 
+import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,69 +18,61 @@ import io.grpc.StatusRuntimeException;
 import jakarta.annotation.PreDestroy;
 
 /**
- * THE FILE THE SESSION 3 EXERCISE LIVES IN.
+ * SOLUTION — exercises 3.1, 3.2 and 3.3.
  *
- * <p>The gRPC half of this service's dependencies, and the one that will take the
- * store down with it if you let it. Everything below the constructor is the shape of
- * a remote call that has not yet been made safe.
+ * <p>Compare with the same file on {@code main}:
+ * {@code git diff main solution -- services/orders/java}
  *
- * <p>Try it. Both of these hang, and neither of them should:
+ * <p>Three things arrived, in the order they matter. A deadline, so a slow payments
+ * service cannot hold a checkout open forever. A bounded retry, legal only because
+ * {@code Charge} carries an idempotency key. And a breaker, so that once payments is
+ * clearly unwell we stop asking — which fails fast for us and takes load off it.
  *
- * <pre>
- *   docker compose stop payments                              # payments is DOWN
- *   PAYMENT_LATENCY_MS=30000 docker compose up -d payments    # payments is SLOW
- * </pre>
- *
- * <p>The first one surprises people. Surely a stopped server refuses connections and
- * the call fails at once? Not on a container network: nothing is listening, the SYN
- * packets are dropped rather than refused, and the connection attempt waits for a TCP
- * timeout measured in minutes. "Down" and "slow" are the same thing to a caller with
- * no deadline — which is why the deadline, not the outage, is the thing to fix.
- *
- * <p>Meanwhile {@code GET /health} on this service keeps answering 200, because orders
- * is not sick. Its dependency is. Watching a completely healthy service become
- * unusable anyway is the moment Session 3 exists for, and it is the fallacy from
- * Session 1 — <em>the network is reliable</em> — collecting its debt.
+ * <p>The first of those is worth more than the other two together. Delete the retry and
+ * the breaker and this service still degrades honestly; delete the deadline and nothing
+ * else here can save it.
  */
 @Component
 public class PaymentsClient {
 
     private static final Logger log = LoggerFactory.getLogger(PaymentsClient.class);
 
+    /** Backoff between attempts. Never zero — an instant retry is just a second failure. */
+    private static final long[] BACKOFF_MS = {50, 200, 800};
+
     private final ManagedChannel channel;
     private final PaymentsGrpc.PaymentsBlockingStub stub;
     private final long timeoutMs;
     private final int retryMax;
+    private final int failureThreshold;
+    private final long resetMs;
+
+    // --- circuit breaker state (exercise 3.3) --------------------------------
+    //
+    // Guarded by `breakerLock`, because every HTTP request runs on its own thread and
+    // an unsynchronised counter under concurrency is a bug that only shows up under
+    // load — which is the only time this code matters.
+    private final Object breakerLock = new Object();
+    private int consecutiveFailures = 0;
+    private long openedAtMs = 0;
 
     PaymentsClient(@Value("${store.payments.addr}") String address,
                    @Value("${store.payments.timeout-ms}") long timeoutMs,
-                   @Value("${store.payments.retry-max}") int retryMax) {
+                   @Value("${store.payments.retry-max}") int retryMax,
+                   @Value("${store.breaker.failure-threshold}") int failureThreshold,
+                   @Value("${store.breaker.reset-ms}") long resetMs) {
         this.timeoutMs = timeoutMs;
         this.retryMax = retryMax;
+        this.failureThreshold = failureThreshold;
+        this.resetMs = resetMs;
 
-        // The channel is built once and reused for the life of the process.
-        //
-        // It is not a connection. It is a managed thing that resolves the name, opens
-        // connections as needed, multiplexes concurrent calls over HTTP/2 and
-        // reconnects on its own after a failure. Building one per request is both
-        // slow and a misunderstanding of what it is.
-        //
-        // `payments` is not a hostname anybody configured — it is a service name the
-        // platform resolves. Plaintext because this hop is inside the cluster; in
-        // production a service that moves money gets mTLS.
         this.channel = ManagedChannelBuilder.forTarget(address).usePlaintext().build();
         this.stub = PaymentsGrpc.newBlockingStub(channel);
 
-        log.info("payments client -> {} (timeout {} ms, retries {})", address, timeoutMs, retryMax);
+        log.info("payments client -> {} (timeout {} ms, retries {}, breaker {}/{} ms)",
+                address, timeoutMs, retryMax, failureThreshold, resetMs);
     }
 
-    /**
-     * Charge the card.
-     *
-     * @param idempotencyKey the order id, which makes this call safe to repeat — and
-     *                       is therefore the precondition for exercise 3.2. Retrying a
-     *                       charge without one bills the customer twice.
-     */
     public ChargeOutcome charge(String orderId, long amountCents, String idempotencyKey) {
         ChargeRequest request = ChargeRequest.newBuilder()
                 .setOrderId(orderId)
@@ -87,110 +81,155 @@ public class PaymentsClient {
                 .setIdempotencyKey(idempotencyKey)
                 .build();
 
+        // ================================================================
+        // EXERCISE 3.3 — the breaker, checked before anything else.
+        //
+        // If payments has failed `failureThreshold` times in a row we do not call it at
+        // all. That is not pessimism, it is arithmetic: the next call will almost
+        // certainly fail too, and it would cost us `timeoutMs` per attempt to find out
+        // while adding load to a service that is already struggling.
+        // ================================================================
+        if (breakerIsOpen()) {
+            log.warn("order={} charge SKIPPED: circuit breaker is open", orderId);
+            throw DomainException.paymentsUnavailable(
+                    "The payment service is not answering, so we stopped calling it. "
+                            + "No charge was made.");
+        }
+
+        Status.Code lastCode = null;
+
+        // ================================================================
+        // EXERCISE 3.2 — a BOUNDED retry.
+        //
+        // At most retryMax extra attempts, and only for the two codes that mean "try
+        // again": UNAVAILABLE (nobody answered) and DEADLINE_EXCEEDED (somebody
+        // answered too slowly). Never for a decline, which is not a failure, and never
+        // for INVALID_ARGUMENT, which is our bug and will be our bug again next time.
+        //
+        // This is only legal because ChargeRequest carries an idempotency key and
+        // payments returns the original response for a key it has seen. Take that away
+        // and this loop bills the customer up to three times.
+        // ================================================================
+        for (int attempt = 0; attempt <= retryMax; attempt++) {
+            try {
+                // ========================================================
+                // EXERCISE 3.1 — THE DEADLINE. The most important line in this file.
+                //
+                // withDeadlineAfter returns a NEW stub, so this is per call, not per
+                // client — set it once in the constructor and you get a countdown that
+                // starts at boot, expires, and never resets.
+                //
+                // The deadline is PER ATTEMPT, which means the worst case is
+                // retryMax + 1 attempts plus backoff: with the defaults, 3 x 2000 ms +
+                // 250 ms ~ 6.25 s. State that number out loud, because whoever calls
+                // checkout has their own budget and 6 seconds may already be over it.
+                //
+                // The other defensible design is one deadline shared by all attempts —
+                // compute the instant once, outside the loop. That keeps the promise at
+                // 2 s but means a slow dependency eats the whole budget on attempt one
+                // and the retries never happen. Which is the honest lesson underneath:
+                // retries fix TRANSIENT failures, not slow ones.
+                // ========================================================
+                ChargeResponse response = stub
+                        .withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS)
+                        .charge(request);
+
+                recordSuccess();
+
+                // A DECLINE IS NOT A FAILURE. The call succeeded; the answer was "no".
+                // It does not count against the breaker and it is never retried.
+                if (response.getStatus() == ChargeStatus.CHARGE_STATUS_DECLINED) {
+                    log.info("order={} charge DECLINED: {}", orderId, response.getDeclineReason());
+                    throw DomainException.paymentDeclined(
+                            response.getDeclineReason().isEmpty()
+                                    ? "The card was declined."
+                                    : response.getDeclineReason());
+                }
+
+                log.info("order={} charge APPROVED auth={} (attempt {})",
+                        orderId, response.getAuthCode(), attempt + 1);
+                return new ChargeOutcome("APPROVED", response.getAuthCode());
+
+            } catch (StatusRuntimeException transportFailure) {
+                Status.Code code = transportFailure.getStatus().getCode();
+
+                if (code != Status.Code.UNAVAILABLE && code != Status.Code.DEADLINE_EXCEEDED) {
+                    // Not retryable, and not the breaker's business either: we sent
+                    // something wrong and sending it again will not help.
+                    throw new IllegalStateException(
+                            "payments rejected the request: " + code, transportFailure);
+                }
+
+                lastCode = code;
+                recordFailure();
+                log.warn("order={} charge attempt {}/{} failed: {}",
+                        orderId, attempt + 1, retryMax + 1, code);
+
+                if (attempt < retryMax) {
+                    sleep(BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]);
+                }
+            }
+        }
+
+        // Out of attempts. NO CHARGE WAS MADE — or if one was, the idempotency key means
+        // a later retry finds it rather than duplicating it. 503 with Retry-After,
+        // because the customer did nothing wrong.
+        throw DomainException.paymentsUnavailable(
+                "The payment service did not respond (%s) after %d attempts of %d ms. "
+                        .formatted(lastCode, retryMax + 1, timeoutMs)
+                        + "No charge was made.");
+    }
+
+    // --- the breaker ---------------------------------------------------------
+
+    /**
+     * Closed, open, or half-open.
+     *
+     * <p>Half-open is the state people forget, and leaving it out is worse than having
+     * no breaker at all: a breaker that never closes again is a permanent outage you
+     * built yourself. After {@code resetMs} this lets exactly one request through; if it
+     * succeeds the breaker closes, and if it fails the clock restarts.
+     */
+    private boolean breakerIsOpen() {
+        synchronized (breakerLock) {
+            if (openedAtMs == 0) {
+                return false;                                    // closed
+            }
+            if (System.currentTimeMillis() - openedAtMs >= resetMs) {
+                log.info("circuit breaker HALF-OPEN: letting one probe through");
+                openedAtMs = 0;                                  // half-open
+                return false;
+            }
+            return true;                                         // open
+        }
+    }
+
+    private void recordSuccess() {
+        synchronized (breakerLock) {
+            if (consecutiveFailures > 0) {
+                log.info("circuit breaker CLOSED after a success");
+            }
+            consecutiveFailures = 0;
+            openedAtMs = 0;
+        }
+    }
+
+    private void recordFailure() {
+        synchronized (breakerLock) {
+            consecutiveFailures++;
+            if (consecutiveFailures >= failureThreshold && openedAtMs == 0) {
+                openedAtMs = System.currentTimeMillis();
+                log.warn("circuit breaker OPEN after {} consecutive failures; "
+                        + "not calling payments for {} ms", consecutiveFailures, resetMs);
+            }
+        }
+    }
+
+    private static void sleep(long millis) {
         try {
-            // ================================================================
-            // TODO (exercise 3.1) — GIVE THIS CALL A DEADLINE.       [do this first]
-            //
-            // `stub.charge(request)` waits forever. Not "a long time" — forever. The
-            // default value of a missing deadline is the worst value it could have,
-            // and it is the single most important line missing from this file.
-            //
-            // Every gRPC stub takes one, in every language:
-            //
-            //     stub.withDeadlineAfter(timeoutMs, TimeUnit.MILLISECONDS).charge(request)
-            //
-            // Note it returns a NEW stub — the deadline is per call, not per client,
-            // so assigning it back to `this.stub` in the constructor would start a
-            // countdown at boot that expires once and never resets.
-            //
-            // The deadline also travels: payments sees the caller's remaining budget
-            // and abandons its own work when the budget runs out, instead of
-            // finishing an answer nobody is listening for.
-            //
-            // Verify: PAYMENT_LATENCY_MS=30000, then POST an order. Before, it hangs;
-            // after, you get a 503 in two seconds.
-            // ================================================================
-
-            // ================================================================
-            // TODO (exercise 3.2) — RETRY, BUT ONLY BECAUSE YOU MAY.       [then this]
-            //
-            // Wrap the call in a bounded retry: at most `retryMax` extra attempts,
-            // with backoff between them (say 50 ms, then 200 ms), and ONLY for
-            // Status.UNAVAILABLE and Status.DEADLINE_EXCEEDED.
-            //
-            // Three rules, each of which someone learns the hard way:
-            //
-            //   1. Only retry what is safe to repeat. This call is, because
-            //      ChargeRequest carries an idempotency key and payments returns the
-            //      original response for a key it has seen. Delete that field and
-            //      this exercise becomes a double-billing bug.
-            //
-            //   2. Never retry a business outcome. A declined card will be declined
-            //      again; retrying it just costs the customer time.
-            //
-            //   3. Bound it, and back off. Retrying into an overloaded service is how
-            //      a brownout becomes an outage — you add load to the exact system
-            //      that is failing from load. Three attempts and a budget, not "retry
-            //      until success".
-            // ================================================================
-
-            // ================================================================
-            // TODO (exercise 3.3) — PUT A CIRCUIT BREAKER IN FRONT.        [last]
-            //
-            // Count consecutive failures. At `store.breaker.failure-threshold`, stop
-            // calling payments at all and fail immediately for
-            // `store.breaker.reset-ms`; then let one probe through and close on
-            // success.
-            //
-            // A breaker does two jobs, and the second is the one people forget:
-            //
-            //   * it turns a slow hang into an instant, designed failure, so orders
-            //     stops burning threads on a call it can predict will fail; and
-            //   * it takes load OFF payments, giving it room to recover. Without one,
-            //     a struggling service is held under by the traffic of everyone
-            //     politely waiting for it.
-            //
-            // Resilience4j does this properly and is worth reaching for in real code.
-            // Writing the twenty lines yourself once is worth doing first, because
-            // then you know what it is doing.
-            // ================================================================
-
-            ChargeResponse response = stub.charge(request);
-
-            // A DECLINE IS NOT A FAILURE. The call succeeded; the answer was "no".
-            //
-            // Payments deliberately returns OK with status DECLINED rather than a gRPC
-            // error code, so that no retry policy in the system ever re-attempts a
-            // decision that will never change. Here that becomes a 402 — the
-            // customer's problem to solve, and not ours.
-            if (response.getStatus() == ChargeStatus.CHARGE_STATUS_DECLINED) {
-                log.info("order={} charge DECLINED: {}", orderId, response.getDeclineReason());
-                throw DomainException.paymentDeclined(
-                        response.getDeclineReason().isEmpty()
-                                ? "The card was declined."
-                                : response.getDeclineReason());
-            }
-
-            log.info("order={} charge APPROVED auth={}", orderId, response.getAuthCode());
-            return new ChargeOutcome("APPROVED", response.getAuthCode());
-
-        } catch (StatusRuntimeException transportFailure) {
-            Status.Code code = transportFailure.getStatus().getCode();
-            log.warn("order={} charge failed at the transport: {}", orderId, code);
-
-            // Transport-level trouble. The customer did nothing wrong, so this is a
-            // 5xx and carries Retry-After. Crucially, NO CHARGE WAS MADE — or if one
-            // was, the idempotency key means the retry will find it rather than
-            // duplicate it.
-            if (code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED) {
-                throw DomainException.paymentsUnavailable(
-                        "The payment service did not respond within %d ms. No charge was made."
-                                .formatted(timeoutMs));
-            }
-
-            // Anything else — INVALID_ARGUMENT, UNIMPLEMENTED — means we sent
-            // something wrong, which is our bug and not a retry candidate.
-            throw new IllegalStateException("payments rejected the request: " + code, transportFailure);
+            Thread.sleep(millis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 

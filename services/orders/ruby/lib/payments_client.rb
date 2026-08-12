@@ -1,71 +1,94 @@
 # frozen_string_literal: true
 
+# SOLUTION — exercises 3.1, 3.2 and 3.3.
+#
+# Compare with the same file on `main`:
+#
+#     git diff main solution -- services/orders/ruby
+#
+# Three things arrived, in the order they matter. A deadline, so a slow payments service
+# cannot hold a checkout open forever. A bounded retry, legal only because `Charge`
+# carries an idempotency key. And a breaker, so that once payments is clearly unwell we
+# stop asking — which fails fast for us and takes load off it.
+#
+# The first of those is worth more than the other two together. Delete the retry and the
+# breaker and this service still degrades honestly; delete the deadline and nothing else
+# here can save it.
+
 require 'grpc'
 require_relative 'config'
 require_relative 'errors'
 
-# The generated code is put on the load path rather than required by relative path,
-# because protoc emits `require 'bootcamp/payments/v1/payments_pb'` INSIDE the
-# _services_pb file it also emits. Those requires are absolute — they assume the
-# generated tree is a load-path root, exactly as a published gem would be — so
-# require_relative into it works for the first file and fails on the one it pulls in.
 $LOAD_PATH.unshift(File.expand_path('../gen', __dir__))
 require 'bootcamp/payments/v1/payments_services_pb'
 
-# THE FILE THE SESSION 3 EXERCISE LIVES IN.
+# Exercise 3.3 — closed, open, or half-open.
 #
-# The gRPC half of this service's dependencies, and the one that will take the store
-# down with it if you let it. Everything inside `charge` is the shape of a remote call
-# that has not yet been made safe.
+# Half-open is the state people forget, and leaving it out is worse than having no
+# breaker at all: a breaker that never closes again is a permanent outage you built
+# yourself. After `reset_ms` this lets exactly one request through; if it succeeds the
+# breaker closes, and if it fails the clock restarts.
 #
-# Try it. Both of these hang, and neither of them should:
-#
-#     docker compose stop payments                              # payments is DOWN
-#     PAYMENT_LATENCY_MS=30000 docker compose up -d payments    # payments is SLOW
-#
-# The first one surprises people. Surely a stopped server refuses connections and the
-# call fails at once? Not on a container network: nothing is listening, the SYN packets
-# are dropped rather than refused, and the connection attempt waits for a TCP timeout
-# measured in minutes. "Down" and "slow" are the same thing to a caller with no deadline
-# — which is why the deadline, not the outage, is the thing to fix.
-#
-# Meanwhile GET /health on this service keeps answering 200, because orders is not sick.
-# Its dependency is. Watching a completely healthy service become unusable anyway is the
-# moment Session 3 exists for, and it is the fallacy from Session 1 — *the network is
-# reliable* — collecting its debt.
-#
-# There is no generated code in this repository. The Dockerfile runs
-# grpc_tools_ruby_protoc over ../../../contracts/proto before this file is ever loaded,
-# so the require above is the contract, compiled.
+# The Mutex is not decoration. puma serves this app from a thread pool, so the counter
+# really is shared mutable state — and MRI's GVL will hide most of the races most of the
+# time, which is worse than not hiding them.
+class CircuitBreaker
+  def initialize(threshold, reset_ms)
+    @threshold = threshold
+    @reset_seconds = reset_ms / 1000.0
+    @lock = Mutex.new
+    @consecutive_failures = 0
+    @opened_at = nil
+  end
+
+  def open?
+    @lock.synchronize do
+      return false if @opened_at.nil?                          # closed
+
+      if Process.clock_gettime(Process::CLOCK_MONOTONIC) - @opened_at >= @reset_seconds
+        warn 'circuit breaker HALF-OPEN: letting one probe through'
+        @opened_at = nil                                       # half-open
+        return false
+      end
+      true                                                     # open
+    end
+  end
+
+  def record_success
+    @lock.synchronize do
+      warn 'circuit breaker CLOSED after a success' if @consecutive_failures.positive?
+      @consecutive_failures = 0
+      @opened_at = nil
+    end
+  end
+
+  def record_failure
+    @lock.synchronize do
+      @consecutive_failures += 1
+      if @consecutive_failures >= @threshold && @opened_at.nil?
+        @opened_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        warn "circuit breaker OPEN after #{@consecutive_failures} consecutive failures; " \
+             "not calling payments for #{Config::BREAKER_RESET_MS} ms"
+      end
+    end
+  end
+end
+
 module PaymentsClient
   V1 = Bootcamp::Payments::V1
 
-  # The stub is built once and reused for the life of the process.
-  #
-  # It is not a connection. It wraps a channel: a managed thing that resolves the name,
-  # opens connections as needed, multiplexes concurrent calls over HTTP/2 and reconnects
-  # on its own after a failure. Building one per request is both slow and a
-  # misunderstanding of what it is.
-  #
-  # Unlike Net::HTTP above, this one IS safe to share across puma's threads — grpc's
-  # channel is built for concurrent use. Two libraries in the same file with opposite
-  # rules, which is why neither is worth guessing about.
-  #
-  # `payments` is not a hostname anybody configured — it is a service name the platform
-  # resolves. Insecure credentials because this hop is inside the cluster; in production
-  # a service that moves money gets mTLS.
+  # Backoff between attempts. Never zero — an instant retry is just a second failure.
+  BACKOFF_MS = [50, 200, 800].freeze
+
   STUB = V1::Payments::Stub.new(Config::PAYMENTS_ADDR, :this_channel_is_insecure)
+  BREAKER = CircuitBreaker.new(Config::BREAKER_FAILURE_THRESHOLD, Config::BREAKER_RESET_MS)
 
   warn "payments client -> #{Config::PAYMENTS_ADDR} " \
-       "(timeout #{Config::PAYMENTS_TIMEOUT_MS} ms, retries #{Config::PAYMENTS_RETRY_MAX})"
+       "(timeout #{Config::PAYMENTS_TIMEOUT_MS} ms, retries #{Config::PAYMENTS_RETRY_MAX}, " \
+       "breaker #{Config::BREAKER_FAILURE_THRESHOLD}/#{Config::BREAKER_RESET_MS} ms)"
 
   module_function
 
-  # Charge the card.
-  #
-  # `idempotency_key` is what makes this call safe to repeat, and is therefore the
-  # precondition for exercise 3.2. Retrying a charge without one bills the customer
-  # twice.
   def charge(order_id, amount_cents, idempotency_key)
     request = V1::ChargeRequest.new(
       order_id: order_id,
@@ -74,109 +97,89 @@ module PaymentsClient
       idempotency_key: idempotency_key
     )
 
-    begin
-      # ================================================================
-      # TODO (exercise 3.1) — GIVE THIS CALL A DEADLINE.       [do this first]
-      #
-      # `STUB.charge(request)` waits forever. Not "a long time" — forever. The default
-      # value of a missing deadline is the worst value it could have, and it is the
-      # single most important line missing from this file.
-      #
-      # Every generated method takes one, as a keyword argument. Ruby wants an ABSOLUTE
-      # time, like Node and unlike Python and Go:
-      #
-      #     STUB.charge(request, deadline: Time.now + Config::PAYMENTS_TIMEOUT_MS / 1000.0)
-      #
-      # Note it is per CALL, not per stub. There is no way to set it once and forget it,
-      # and that is deliberate across every gRPC library: a deadline is a property of the
-      # request you are making right now, not of the connection you happen to be making
-      # it over.
-      #
-      # The deadline also travels: payments sees the caller's remaining budget and
-      # abandons its own work when the budget runs out, instead of finishing an answer
-      # nobody is listening for. Watch the payments log say "ABANDONED: context canceled"
-      # the moment this expires.
-      #
-      # Verify: PAYMENT_LATENCY_MS=30000, then POST an order. Before, it hangs; after,
-      # you get a 503 in two seconds.
-      # ================================================================
-
-      # ================================================================
-      # TODO (exercise 3.2) — RETRY, BUT ONLY BECAUSE YOU MAY.       [then this]
-      #
-      # Wrap the call in a bounded retry: at most Config::PAYMENTS_RETRY_MAX extra
-      # attempts, with backoff between them (say 50 ms, then 200 ms), and ONLY for
-      # GRPC::Unavailable and GRPC::DeadlineExceeded.
-      #
-      # Three rules, each of which someone learns the hard way:
-      #
-      #   1. Only retry what is safe to repeat. This call is, because ChargeRequest
-      #      carries an idempotency key and payments returns the original response for a
-      #      key it has seen. Delete that field and this exercise becomes a
-      #      double-billing bug.
-      #
-      #   2. Never retry a business outcome. A declined card will be declined again;
-      #      retrying it just costs the customer time.
-      #
-      #   3. Bound it, and back off. Retrying into an overloaded service is how a
-      #      brownout becomes an outage — you add load to the exact system that is
-      #      failing from load. Three attempts and a budget, not "retry until success".
-      #
-      # Ruby's `retry` keyword makes attempt 1 look identical to attempt 3, which is
-      # convenient and is also exactly how an unbounded retry gets written by accident.
-      # Count.
-      # ================================================================
-
-      # ================================================================
-      # TODO (exercise 3.3) — PUT A CIRCUIT BREAKER IN FRONT.        [last]
-      #
-      # Count consecutive failures. At Config::BREAKER_FAILURE_THRESHOLD, stop calling
-      # payments at all and fail immediately for Config::BREAKER_RESET_MS; then let one
-      # probe through and close on success.
-      #
-      # A breaker does two jobs, and the second is the one people forget:
-      #
-      #   * it turns a slow hang into an instant, designed failure, so orders stops
-      #     burning puma threads on a call it can predict will fail; and
-      #   * it takes load OFF payments, giving it room to recover. Without one, a
-      #     struggling service is held under by the traffic of everyone politely waiting
-      #     for it.
-      #
-      # puma serves this app from a thread pool, so your counter is shared mutable state
-      # across threads and wants a Mutex. MRI's GVL will hide most of the races most of
-      # the time, which is worse than not hiding them. Writing the twenty lines yourself
-      # once is worth doing first, because then you know what a gem like `circuitbox` is
-      # doing.
-      # ================================================================
-
-      response = STUB.charge(request)
-    rescue GRPC::Unavailable, GRPC::DeadlineExceeded => e
-      # Transport-level trouble. The customer did nothing wrong, so this is a 5xx and
-      # carries Retry-After. Crucially, NO CHARGE WAS MADE — or if one was, the
-      # idempotency key means the retry will find it rather than duplicate it.
-      warn "order=#{order_id} charge failed at the transport: #{e.class}"
-      raise PaymentsUnavailable,
-            "The payment service did not respond within #{Config::PAYMENTS_TIMEOUT_MS} ms. " \
-            'No charge was made.'
-    rescue GRPC::BadStatus => e
-      # Anything else — INVALID_ARGUMENT, UNIMPLEMENTED — means we sent something wrong,
-      # which is our bug and not a retry candidate.
-      raise "payments rejected the request: #{e.class}"
-    end
-
-    # A DECLINE IS NOT A FAILURE. The call succeeded; the answer was "no".
+    # EXERCISE 3.3 — the breaker, checked before anything else.
     #
-    # Payments deliberately returns OK with status DECLINED rather than a gRPC error
-    # code, so that no retry policy in the system ever re-attempts a decision that will
-    # never change. Here that becomes a 402 — the customer's problem to solve, and not
-    # ours.
-    if response.status == :CHARGE_STATUS_DECLINED
-      warn "order=#{order_id} charge DECLINED: #{response.decline_reason}"
-      reason = response.decline_reason
-      raise PaymentDeclined, reason.empty? ? 'The card was declined.' : reason
+    # If payments has failed BREAKER_FAILURE_THRESHOLD times in a row we do not call it
+    # at all. That is not pessimism, it is arithmetic: the next call will almost
+    # certainly fail too, and it would cost us the full timeout per attempt to find out
+    # while adding load to a service that is already struggling.
+    if BREAKER.open?
+      warn "order=#{order_id} charge SKIPPED: circuit breaker is open"
+      raise PaymentsUnavailable,
+            'The payment service is not answering, so we stopped calling it. ' \
+            'No charge was made.'
     end
 
-    warn "order=#{order_id} charge APPROVED auth=#{response.auth_code}"
-    { status: 'APPROVED', auth_code: response.auth_code }
+    last_error = nil
+
+    # EXERCISE 3.2 — a BOUNDED retry.
+    #
+    # At most PAYMENTS_RETRY_MAX extra attempts, and only for the two codes that mean
+    # "try again". Never for a decline, which is not a failure, and never for
+    # INVALID_ARGUMENT, which is our bug and will be our bug again next time.
+    #
+    # Written as an explicit counted loop rather than Ruby's `retry` keyword, on purpose:
+    # `retry` makes attempt one look identical to attempt fifty, which is convenient and
+    # is also exactly how an unbounded retry gets written by accident.
+    #
+    # This is only legal because ChargeRequest carries an idempotency key and payments
+    # returns the original response for a key it has seen. Take that away and this loop
+    # bills the customer up to three times.
+    (0..Config::PAYMENTS_RETRY_MAX).each do |attempt|
+      begin
+        # ============================================================
+        # EXERCISE 3.1 — THE DEADLINE. The most important line in this file.
+        #
+        # Ruby wants an ABSOLUTE Time, like Node and unlike Python and Go — and
+        # computing it INSIDE the loop is what makes the deadline per attempt.
+        #
+        # Per attempt, the worst case is retries + 1 attempts plus backoff: with the
+        # defaults, 3 x 2000 ms + 250 ms ~ 6.25 s. Hoist this line above the loop and
+        # all three attempts share a single 2 s budget instead — the promise stays at
+        # 2 s, but a slow dependency eats the whole thing on attempt one and the retries
+        # never happen. Which is the honest lesson underneath: retries fix TRANSIENT
+        # failures, not slow ones.
+        # ============================================================
+        response = STUB.charge(
+          request, deadline: Time.now + (Config::PAYMENTS_TIMEOUT_MS / 1000.0)
+        )
+      rescue GRPC::Unavailable, GRPC::DeadlineExceeded => e
+        last_error = e
+        BREAKER.record_failure
+        warn "order=#{order_id} charge attempt #{attempt + 1}/" \
+             "#{Config::PAYMENTS_RETRY_MAX + 1} failed: #{e.class}"
+
+        if attempt < Config::PAYMENTS_RETRY_MAX
+          sleep(BACKOFF_MS[[attempt, BACKOFF_MS.size - 1].min] / 1000.0)
+        end
+        next
+      rescue GRPC::BadStatus => e
+        # Not retryable, and not the breaker's business either: we sent something wrong
+        # and sending it again will not help.
+        raise "payments rejected the request: #{e.class}"
+      end
+
+      BREAKER.record_success
+
+      # A DECLINE IS NOT A FAILURE. The call succeeded; the answer was "no". It does not
+      # count against the breaker and it is never retried.
+      if response.status == :CHARGE_STATUS_DECLINED
+        warn "order=#{order_id} charge DECLINED: #{response.decline_reason}"
+        reason = response.decline_reason
+        raise PaymentDeclined, reason.empty? ? 'The card was declined.' : reason
+      end
+
+      warn "order=#{order_id} charge APPROVED auth=#{response.auth_code} " \
+           "(attempt #{attempt + 1})"
+      return { status: 'APPROVED', auth_code: response.auth_code }
+    end
+
+    # Out of attempts. NO CHARGE WAS MADE — or if one was, the idempotency key means a
+    # later retry finds it rather than duplicating it. 503 with Retry-After, because the
+    # customer did nothing wrong.
+    raise PaymentsUnavailable,
+          "The payment service did not respond (#{last_error.class}) after " \
+          "#{Config::PAYMENTS_RETRY_MAX + 1} attempts of #{Config::PAYMENTS_TIMEOUT_MS} ms. " \
+          'No charge was made.'
   end
 end
