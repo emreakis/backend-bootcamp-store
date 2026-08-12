@@ -191,4 +191,4 @@ once, so a slow first `docker pull` does not cost you the exercise.
 
 ---
 
-Emre Akış · Backend Bootcamp · [backendguru.io](https://backendguru.io)
+Emre Akış · [Software Design and Architecture Bootcamp](https://www.backendguru.com/products/software-design-and-architecture-bootcamp) · [backendguru.com](https://www.backendguru.com/)
